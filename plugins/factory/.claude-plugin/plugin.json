@@ -1,0 +1,8 @@
+{
+  "name": "factory",
+  "version": "0.0.1",
+  "description": "Turns your session into the manager of an agent-driven software factory.",
+  "author": { "name": "Adam Parsons" },
+  "license": "Apache-2.0",
+  "repository": "https://github.com/aparsons/claude-factory"
+}

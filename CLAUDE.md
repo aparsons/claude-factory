@@ -1,6 +1,6 @@
 ## Checks
 
-Run `scripts/check.sh` before every commit once it exists (the first ticket adds it).
+Run `scripts/check.sh` before every commit; it is the whole CI check job (`claude plugin validate`, shellcheck, every `tests/*/run.sh`). The pre-push hook runs it too (enable once per clone: `git config core.hooksPath .githooks`).
 
 ## Agent skills
 

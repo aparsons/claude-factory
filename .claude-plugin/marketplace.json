@@ -1,0 +1,12 @@
+{
+  "name": "claude-factory",
+  "description": "A software factory for Claude Code: a manager session, agents, hooks, a ledger and reports.",
+  "owner": { "name": "Adam Parsons" },
+  "plugins": [
+    {
+      "name": "factory",
+      "source": "./plugins/factory",
+      "description": "Turns your session into the manager of an agent-driven software factory."
+    }
+  ]
+}
