@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# factory-kpis: prints the factory's KPI table (flow, quality, cost, health) from the ledger.
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: factory-kpis [--json] [--ledger FILE] [--git-log FILE] [--runs FILE] [--usage FILE] [--prices FILE]
+
+  --ledger FILE   ledger lines (default: <project>/.factory/ledger.jsonl)
+  --git-log FILE  `git log --merges --format='%cI%x09%s'`; a merge counts as ticket N when its
+                  subject names a branch like t<N>-slug
+  --runs FILE     `gh run list --json conclusion,status,startedAt,updatedAt`
+  --usage FILE    plan usage (default: <project>/.factory/usage.json when present)
+  --prices FILE   prices (default: the plugin's data/prices.json)
+  --json          print JSON instead of Markdown
+KPIs that cannot be computed from what is recorded print as n/a.
+USAGE
+}
+
+root=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+project=${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}
+fdir="$project/.factory"
+ledger="$fdir/ledger.jsonl" gitlog="" runs="" usagefile="" prices="$root/data/prices.json" json=0
+[ -f "$fdir/usage.json" ] && usagefile="$fdir/usage.json"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --json) json=1 ;;
+    --ledger) ledger=${2:?}; shift ;;
+    --git-log) gitlog=${2:?}; shift ;;
+    --runs) runs=${2:?}; shift ;;
+    --usage) usagefile=${2:?}; shift ;;
+    --prices) prices=${2:?}; shift ;;
+    -h | --help) usage; exit 0 ;;
+    *) echo "factory-kpis: unknown argument $1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+free_kb() { df -Pk "$1" 2>/dev/null | awk 'NR == 2 {print $4}'; }
+root_kb=${FACTORY_KPIS_FREE_ROOT_KB:-$(free_kb /)}
+tmp_kb=${FACTORY_KPIS_FREE_TMP_KB:-$(free_kb "${TMPDIR:-/tmp}")}
+
+merges=null
+[ -z "$gitlog" ] || merges=$(jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {ts: .[0], subject: (.[1:] | join("\t"))})' "$gitlog")
+runs_json=null
+[ -z "$runs" ] || runs_json=$(jq -c . "$runs")
+usage_json=null
+[ -z "$usagefile" ] || [ ! -f "$usagefile" ] || usage_json=$(jq -c . "$usagefile")
+
+ledger_text=""
+[ ! -f "$ledger" ] || ledger_text=$(cat "$ledger")
+
+kpis=$(printf '%s' "$ledger_text" | jq -R -s -c \
+  --argjson prices "$(jq -c . "$prices")" --argjson runs "$runs_json" --argjson usage "$usage_json" \
+  --argjson merges "$merges" \
+  --argjson health "{\"root_kb\": ${root_kb:-0}, \"tmp_kb\": ${tmp_kb:-0}}" \
+  -f "$root/lib/kpis.jq")
+
+if [ "$json" = 1 ]; then
+  jq . <<<"$kpis"
+else
+  jq -r -f "$root/lib/kpis-md.jq" <<<"$kpis"
+fi

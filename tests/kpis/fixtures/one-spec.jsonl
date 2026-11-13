@@ -1,0 +1,15 @@
+{"ts":"2026-01-01T10:00:00Z","event":"assign","ticket":3,"spec":1,"role":"implementer"}
+{"ts":"2026-01-01T10:00:00Z","event":"assign","ticket":4,"spec":1,"role":"implementer"}
+{"ts":"2026-01-01T10:00:01Z","event":"agent_launch","tool_use_id":"tu1","ticket":3,"role":"implementer"}
+{"ts":"2026-01-01T10:00:02Z","event":"agent_start","agent_id":"a1","role":"implementer","model":null,"ticket":null}
+{"ts":"2026-01-01T10:30:02Z","event":"agent_stop","agent_id":"a1","role":"implementer","model":"claude-sonnet-5-5","ticket":3,"duration_s":1800,"outcome":"completed","tokens":{"input":1000000,"output":200000,"cache_read":8000000,"cache_creation":500000}}
+{"ts":"2026-01-01T10:30:05Z","event":"gate","ticket":3,"result":"pass","tests_added":4}
+{"ts":"2026-01-01T11:00:00Z","event":"agent_start","agent_id":"a2","role":"implementer","model":null,"ticket":null}
+{"ts":"2026-01-01T11:20:00Z","event":"agent_stop","agent_id":"a2","role":"implementer","model":"claude-sonnet-5-5","ticket":4,"duration_s":1200,"outcome":"completed","tokens":{"input":500000,"output":100000,"cache_read":4000000,"cache_creation":250000}}
+{"ts":"2026-01-01T11:20:05Z","event":"gate","ticket":4,"result":"fail","tests_added":2}
+{"ts":"2026-01-01T11:25:00Z","event":"gate","ticket":4,"result":"pass","tests_added":1}
+{"ts":"2026-01-01T12:00:00Z","event":"agent_start","agent_id":"a3","role":"standards-reviewer","model":null,"ticket":null}
+{"ts":"2026-01-01T12:00:00Z","event":"agent_launch","tool_use_id":"tu3","ticket":4,"role":"standards-reviewer"}
+{"ts":"2026-01-01T12:00:09Z","event":"agent_launch_result","tool_use_id":"tu3","agent_id":"a3","model":"claude-sonnet-5-5"}
+{"ts":"2026-01-01T12:05:00Z","event":"review","ticket":4,"findings":2}
+{"ts":"2026-01-01T12:05:00Z","event":"agent_stop","agent_id":"a3","role":"standards-reviewer","model":null,"ticket":null,"duration_s":300,"outcome":"completed","tokens":{"input":100000,"output":20000,"cache_read":0,"cache_creation":0}}

@@ -1,0 +1,11 @@
+{"ts":"2026-02-01T08:00:00Z","event":"agent_start","agent_id":"b1","role":"implementer","model":null,"ticket":null}
+{"ts":"2026-02-01T08:40:00Z","event":"agent_stop","agent_id":"b1","role":"implementer","model":"claude-sonnet-5-5","ticket":5,"duration_s":2400,"outcome":"completed","tokens":{"input":300000,"output":60000,"cache_read":2000000,"cache_creation":100000}}
+{"ts":"2026-02-01T08:41:00Z","event":"gate","ticket":5,"result":"fail"}
+{"ts":"2026-02-01T08:42:00Z","event":"agent_start","agent_id":"b2","role":"implementer","model":null,"ticket":null}
+{"ts":"2026-02-01T09:10:00Z","event":"agent_stop","agent_id":"b2","role":"implementer","model":"claude-sonnet-5-5","ticket":5,"duration_s":1680,"outcome":"completed","tokens":{"input":300000,"output":60000,"cache_read":2500000,"cache_creation":50000}}
+{"ts":"2026-02-01T09:11:00Z","event":"gate","ticket":5,"result":"fail"}
+{"ts":"2026-02-01T09:12:00Z","event":"escalation","ticket":5,"from":"implementer","to":"implementer-deep","reason":"gate failed twice"}
+{"ts":"2026-02-01T09:13:00Z","event":"agent_start","agent_id":"b3","role":"implementer-deep","model":null,"ticket":null}
+{"ts":"2026-02-01T10:13:00Z","event":"agent_stop","agent_id":"b3","role":"implementer-deep","model":"claude-opus-5-5","ticket":5,"duration_s":3600,"outcome":"completed","tokens":{"input":200000,"output":80000,"cache_read":3000000,"cache_creation":150000}}
+{"ts":"2026-02-01T10:14:00Z","event":"gate","ticket":5,"result":"pass","tests_added":6}
+{"ts":"2026-02-01T10:20:00Z","event":"stall","ticket":5}

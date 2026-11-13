@@ -1,0 +1,2 @@
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Look up the docs."}]}}
+{"type":"assistant","message":{"id":"msg_9","model":"claude-haiku-5-5","role":"assistant","content":[],"usage":{"input_tokens":7,"output_tokens":3}}}

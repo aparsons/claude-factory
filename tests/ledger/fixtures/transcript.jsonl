@@ -1,0 +1,6 @@
+{"type":"user","message":{"role":"user","content":"Build the ledger hook for ticket #3 (spec #1)."}}
+{"type":"assistant","message":{"id":"msg_1","model":"claude-sonnet-5-5","role":"assistant","content":[{"type":"text","text":"partial"}],"usage":{"input_tokens":100,"output_tokens":10,"cache_read_input_tokens":1000,"cache_creation_input_tokens":200}}}
+{"type":"assistant","message":{"id":"msg_1","model":"claude-sonnet-5-5","role":"assistant","content":[{"type":"tool_use","name":"Bash"}],"usage":{"input_tokens":100,"output_tokens":50,"cache_read_input_tokens":1000,"cache_creation_input_tokens":200}}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]}}
+{"type":"assistant","message":{"id":"msg_2","model":"claude-sonnet-5-5","role":"assistant","content":[{"type":"text","text":"done"}],"usage":{"input_tokens":20,"output_tokens":30,"cache_read_input_tokens":1500,"cache_creation_input_tokens":0}}}
+not json at all

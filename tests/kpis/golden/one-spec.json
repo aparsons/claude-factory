@@ -1,0 +1,88 @@
+{
+  "ledger": {
+    "events": 15,
+    "first_ts": "2026-01-01T10:00:00Z",
+    "last_ts": "2026-01-01T12:05:00Z"
+  },
+  "flow": {
+    "tickets_merged_per_day": 2,
+    "lead_time_median_s": 3449.5,
+    "frontier_size": null,
+    "active_agents": 0,
+    "stalls": 0
+  },
+  "quality": {
+    "first_try_gate_pass_rate": 0.5,
+    "rework_runs": 0,
+    "escalations": 0,
+    "ci_pass_rate": 0.67,
+    "ci_median_duration_s": 180,
+    "tests_added": 7,
+    "review_findings_per_ticket": 2
+  },
+  "cost": {
+    "runs": 3,
+    "tokens": {
+      "input": 1600000,
+      "output": 320000,
+      "cache_read": 12000000,
+      "cache_creation": 750000
+    },
+    "cache_read_share": 0.84,
+    "usd_low": 9.48,
+    "usd_high": 10.6,
+    "unpriced_runs": 0,
+    "by_ticket": [
+      {
+        "ticket": 3,
+        "spec": 1,
+        "runs": 1,
+        "tokens": {
+          "input": 1000000,
+          "output": 200000,
+          "cache_read": 8000000,
+          "cache_creation": 500000
+        },
+        "usd_low": 6.05,
+        "usd_high": 6.8,
+        "unpriced_runs": 0
+      },
+      {
+        "ticket": 4,
+        "spec": 1,
+        "runs": 2,
+        "tokens": {
+          "input": 600000,
+          "output": 120000,
+          "cache_read": 4000000,
+          "cache_creation": 250000
+        },
+        "usd_low": 3.43,
+        "usd_high": 3.8,
+        "unpriced_runs": 0
+      }
+    ],
+    "by_spec": [
+      {
+        "spec": 1,
+        "tickets": 2,
+        "usd_low": 9.48,
+        "usd_high": 10.6
+      }
+    ],
+    "plan_usage": {
+      "five_hour_pct": 42.5,
+      "five_hour_resets_at": 1767276000,
+      "seven_day_pct": 18,
+      "seven_day_resets_at": 1767800000
+    },
+    "prices": {
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "retrieved": "2026-11-12"
+    }
+  },
+  "health": {
+    "free_root_gb": 10,
+    "free_tmp_gb": 2
+  }
+}

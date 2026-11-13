@@ -1,0 +1,5 @@
+[{"conclusion":"success","status":"completed","startedAt":"2026-01-01T10:46:00Z","updatedAt":"2026-01-01T10:49:00Z"},
+ {"conclusion":"failure","status":"completed","startedAt":"2026-01-01T11:00:00Z","updatedAt":"2026-01-01T11:02:00Z"},
+ {"conclusion":"success","status":"completed","startedAt":"2026-01-01T12:31:00Z","updatedAt":"2026-01-01T12:36:00Z"},
+ {"conclusion":"cancelled","status":"completed","startedAt":"2026-01-01T12:31:00Z","updatedAt":"2026-01-01T12:32:00Z"},
+ {"conclusion":"","status":"in_progress","startedAt":"2026-01-01T12:40:00Z","updatedAt":"2026-01-01T12:41:00Z"}]
