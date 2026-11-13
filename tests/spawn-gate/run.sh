@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Suite: spawn-gate blocks builders when the machine has no room, never blocks read-only roles.
 set -euo pipefail
+# Under a git hook (pre-push) GIT_DIR and friends leak in and would point the temp repo's git calls at this one.
+for v in $(git rev-parse --local-env-vars); do unset "$v"; done
 here="$(cd "$(dirname "$0")" && pwd)"
 gate="$here/../../plugins/factory/hooks/spawn-gate.sh"
 fx="$here/fixtures"
