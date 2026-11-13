@@ -32,6 +32,14 @@ else
   failed+=("shellcheck missing")
 fi
 
+# Under a git hook (pre-push), GIT_DIR and its kin are set for this
+# repository. A suite that makes its own temporary repository would then
+# write into this one: a test once set core.bare=true here. Clear them
+# before any suite runs.
+for v in $(git rev-parse --local-env-vars); do
+  unset "$v"
+done
+
 for suite in tests/*/run.sh; do
   [ -e "$suite" ] || continue
   run "$suite" bash "$suite"
