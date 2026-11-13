@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# factory-integration: a spec's integration branch and its dedicated worktree, and the
+# mechanical merge of a finished ticket into it. Never switches the user's checkout and
+# never touches the default branch.
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  factory-integration ensure --spec S --branch B
+      Fetch origin. If origin has no B, create it from the local B, or else from origin's default
+      branch, and push it (hooks run). Make sure the integration worktree
+      <project>/.claude/worktrees/spec-S exists on B, and record both with factory-state.
+      Prints {spec, branch, worktree, created}.
+  factory-integration merge --ticket N --branch TICKET_BRANCH [--worktree PATH] [--title TEXT]
+      In the ticket's spec integration worktree (from factory-state): fast-forward to origin,
+      merge TICKET_BRANCH with --no-ff, push through the hooks, then remove the ticket's
+      worktree PATH and delete TICKET_BRANCH, and record the merge with factory-state.
+      Prints {result, ...}. Exit 0: merged. Exit 3: conflict (merge aborted, nothing pushed,
+      worktree and branch kept; files listed). Exit 4: the integration branch has diverged from
+      origin or the push failed (local merge undone; output included).
+USAGE
+}
+
+root=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+# shellcheck disable=SC1091 # lib/common.sh, checked on its own
+. "$root/lib/common.sh"
+state_cmd="$root/bin/factory-state"
+
+die() { echo "factory-integration: $*" >&2; exit 2; }
+cmd=${1:-}
+case "$cmd" in -h | --help) usage; exit 0 ;; ensure | merge) shift ;; *) usage >&2; exit 2 ;; esac
+spec="" branch="" ticket="" worktree="" title=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --spec) spec=${2:?}; shift ;;
+    --branch) branch=${2:?}; shift ;;
+    --ticket) ticket=${2:?}; shift ;;
+    --worktree) worktree=${2:?}; shift ;;
+    --title) title=${2:?}; shift ;;
+    -h | --help) usage; exit 0 ;;
+    *) die "unknown argument $1" ;;
+  esac
+  shift
+done
+
+project=$(factory_project)
+export CLAUDE_PROJECT_DIR="$project"
+g() { git -C "$project" "$@"; }
+
+default_branch() {
+  local d
+  d=$(g symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)
+  d=${d#origin/}
+  if [ -z "$d" ]; then
+    d=$( (cd "$project" && gh repo view --json defaultBranchRef --jq .defaultBranchRef.name) 2>/dev/null || true)
+  fi
+  printf '%s\n' "${d:-main}"
+}
+
+case "$cmd" in
+ensure)
+  [[ "$spec" =~ ^[0-9]+$ ]] || die "ensure needs --spec <number>"
+  [[ "$branch" == spec/* ]] || die "an integration branch is named spec/<number>-<slug>, got '$branch'"
+  def=$(default_branch)
+  [ "$branch" != "$def" ] || die "refusing to use the default branch as an integration branch"
+  g fetch -q origin
+  created=false
+  if ! g rev-parse -q --verify "refs/remotes/origin/$branch" >/dev/null; then
+    if g rev-parse -q --verify "refs/heads/$branch" >/dev/null; then
+      src="refs/heads/$branch"
+    else
+      src="refs/remotes/origin/$def"
+      g rev-parse -q --verify "$src" >/dev/null || die "origin has no default branch $def"
+    fi
+    g push -q origin "$src:refs/heads/$branch" >&2 || die "could not push $branch to origin"
+    g fetch -q origin
+    created=true
+  fi
+  wt="$project/.claude/worktrees/spec-$spec"
+  if [ ! -d "$wt" ]; then
+    factory_exclude "$project" /.claude/worktrees/ /.factory/
+    mkdir -p "$project/.claude/worktrees"
+    if g rev-parse -q --verify "refs/heads/$branch" >/dev/null; then
+      g worktree add -q "$wt" "$branch" >&2 || die "could not add the worktree $wt for $branch (is $branch checked out elsewhere?)"
+    else
+      g worktree add -q --track -b "$branch" "$wt" "origin/$branch" >&2 || die "could not add the worktree $wt"
+    fi
+  fi
+  "$state_cmd" integration --spec "$spec" --branch "$branch" --worktree "$wt"
+  jq -n --argjson spec "$spec" --arg branch "$branch" --arg wt "$wt" --argjson created "$created" \
+    '{spec: $spec, branch: $branch, worktree: $wt, created: $created}'
+  ;;
+merge)
+  [[ "$ticket" =~ ^[0-9]+$ ]] || die "merge needs --ticket <number>"
+  [ -n "$branch" ] || die "merge needs --branch <ticket branch>"
+  st=$("$state_cmd" show)
+  spec=$(jq -r --arg t "$ticket" '.assignments[$t].spec // empty' <<<"$st")
+  [ -n "$spec" ] || die "ticket #$ticket has no assignment in the factory state"
+  ib=$(jq -r --arg s "$spec" '.integration[$s].branch // empty' <<<"$st")
+  wt=$(jq -r --arg s "$spec" '.integration[$s].worktree // empty' <<<"$st")
+  [ -n "$ib" ] && [ -d "$wt" ] || die "spec #$spec has no integration worktree; run factory-integration ensure first"
+  [ "$ib" != "$(default_branch)" ] || die "refusing to merge into the default branch"
+  w() { git -C "$wt" "$@"; }
+  [ "$(w symbolic-ref -q --short HEAD)" = "$ib" ] || die "$wt is not on $ib"
+  [ -z "$(w status --porcelain --untracked-files=no)" ] || die "$wt has uncommitted changes"
+  g rev-parse -q --verify "refs/heads/$branch" >/dev/null || die "no local branch $branch"
+  w fetch -q origin
+  if ! w merge -q --ff-only "origin/$ib" >/dev/null 2>&1; then
+    jq -n --arg b "$ib" '{result: "diverged", detail: "the local \($b) has commits origin does not, and origin has commits it does not; nothing merged"}'
+    exit 4
+  fi
+  before=$(w rev-parse HEAD)
+  msg="Merge $branch into $ib${title:+: $title} (#$ticket)"
+  if ! w merge -q --no-ff --no-edit -m "$msg" "$branch" >/dev/null 2>&1; then
+    files=$(w diff --name-only --diff-filter=U | jq -R -s -c 'split("\n") | map(select(length > 0))')
+    w merge --abort >/dev/null 2>&1 || w reset -q --hard "$before"
+    jq -n --arg tb "$branch" --arg ib "$ib" --argjson files "$files" \
+      '{result: "conflict", ticket_branch: $tb, integration_branch: $ib, files: $files}'
+    exit 3
+  fi
+  commit=$(w rev-parse HEAD)
+  if ! out=$(w push origin "$ib" 2>&1); then
+    w reset -q --hard "$before"
+    jq -n --arg ib "$ib" --arg out "$out" '{result: "push-failed", integration_branch: $ib, output: $out}'
+    exit 4
+  fi
+  removed=null
+  if [ -n "$worktree" ] && [ -d "$worktree" ]; then
+    if [ -z "$(git -C "$worktree" status --porcelain 2>/dev/null)" ]; then
+      # clean apart from ignored build output, and its commits are merged: safe to force
+      g worktree remove --force "$worktree" && removed=true || removed=false
+    else
+      removed=false
+    fi
+  fi
+  deleted=false
+  if [ "$removed" != false ] && w branch -q -d "$branch" 2>/dev/null; then deleted=true; fi
+  "$state_cmd" merge --ticket "$ticket" --commit "$commit"
+  jq -n --arg c "$commit" --arg tb "$branch" --arg ib "$ib" --arg wt "$worktree" \
+    --argjson removed "$removed" --argjson deleted "$deleted" \
+    '{result: "merged", commit: $c, ticket_branch: $tb, integration_branch: $ib,
+      worktree: (if $wt == "" then null else $wt end), worktree_removed: $removed, branch_deleted: $deleted}'
+  ;;
+esac

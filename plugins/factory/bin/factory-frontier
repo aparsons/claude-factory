@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# factory-frontier: lists ready specs and tickets from the issue tracker and ranks them.
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: factory-frontier [--json] [--from DIR] [--state FILE] [--project DIR]
+
+Reads the open issues labelled ready-for-agent (the label name comes from
+docs/agents/triage-labels.md), with their parents, sub-issues and native blockers, and prints:
+  ready         tickets that can start now, ranked: security (ticket or its spec) first, then
+                priority label, then milestone (due date, then number), then most open issues
+                unblocked transitively, then oldest; each with its suggested role, model and effort
+                from data/roles.json, its ticket branch and its spec's integration branch
+  running       tickets with an assignment in .factory/state.json
+  blocked       tickets with an open blocker, a blocked spec, or another assignee
+  specs         per spec: tickets, merged, open, status (needs-tickets, ready, running, blocked, complete)
+  needs_tickets specs with no sub-issues: they need /to-tickets
+  alerts        a red default branch (its latest completed run of a workflow failed): first of all
+A ticket merged into its integration branch (state: merged) counts as done and no longer blocks.
+
+  --from DIR    read recorded gh output instead of calling gh (tests):
+                  DIR/issues.json  the gh issue list output (required)
+                  DIR/repo.json    gh repo view --json defaultBranchRef (optional)
+                  DIR/runs.json    gh run list on the default branch (optional)
+  --state FILE  state file (default: <project>/.factory/state.json)
+  --json        print JSON (default: a short text table)
+Settings (.factory/settings.json): priority_labels (ordered, highest first), factory_assignee
+(a login whose assignment still counts as unassigned), roles, deep_when.
+USAGE
+}
+
+root=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+# shellcheck disable=SC1091 # lib/common.sh, checked on its own
+. "$root/lib/common.sh"
+
+json=0 from="" statefile="" project=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --json) json=1 ;;
+    --from) from=${2:?}; shift ;;
+    --state) statefile=${2:?}; shift ;;
+    --project) project=${2:?}; shift ;;
+    -h | --help) usage; exit 0 ;;
+    *) echo "factory-frontier: unknown argument $1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+[ -n "$project" ] || project=$(factory_project)
+[ -n "$statefile" ] || statefile="$project/.factory/state.json"
+
+fields=number,title,state,createdAt,labels,milestone,assignees,parent,blockedBy,blocking,subIssues,subIssuesSummary
+if [ -n "$from" ]; then
+  issues=$(jq -c . "$from/issues.json")
+  repo='null' runs='null'
+  [ ! -f "$from/repo.json" ] || repo=$(jq -c . "$from/repo.json")
+  [ ! -f "$from/runs.json" ] || runs=$(jq -c . "$from/runs.json")
+else
+  label=$(factory_ready_label "$project")
+  issues=$(cd "$project" && gh issue list --state open --label "$label" --limit 1000 --json "$fields")
+  repo=$(cd "$project" && gh repo view --json defaultBranchRef 2>/dev/null || echo null)
+  runs=null
+  default=$(jq -r '.defaultBranchRef.name // empty' <<<"$repo")
+  if [ -n "$default" ]; then
+    runs=$(cd "$project" && gh run list --branch "$default" --limit 30 \
+      --json workflowName,status,conclusion,url,createdAt 2>/dev/null || echo null)
+  fi
+fi
+default=$(jq -c '.defaultBranchRef.name // null' <<<"$repo")
+state='{}'
+[ ! -f "$statefile" ] || state=$(jq -c . "$statefile")
+
+out=$(jq -n -c --argjson issues "$issues" --argjson state "$state" --argjson runs "$runs" \
+  --argjson default "$default" --argjson roles "$(jq -c . "$root/data/roles.json")" \
+  --argjson settings "$(factory_settings "$project")" -f "$root/lib/frontier.jq")
+
+if [ "$json" = 1 ]; then
+  jq . <<<"$out"
+  exit 0
+fi
+jq -r '
+  def why: [if .security then "security" else empty end,
+            (.priority_label // empty | "priority \(.)"),
+            (if .milestone then "milestone \(.milestone.title)" else empty end),
+            (if .unblocks > 0 then "unblocks \(.unblocks)" else empty end)] | join(", ");
+  (.alerts[] | "ALERT: default branch \(.branch) is red: " + ([.failing[] | "\(.workflow) \(.url)"] | join("; "))),
+  "Frontier: \(.ready | length) ready",
+  (.ready[] | "  \(.rank). #\(.number) (spec #\(.spec)) \(.role) \(.model)/\(.effort)  \(.title)" + (why | if . == "" then "" else "  [\(.)]" end)),
+  (if (.running | length) > 0 then "Running: " + ([.running[] | "#\(.number)"] | join(", ")) else empty end),
+  (if (.blocked | length) > 0 then "Blocked:" else empty end),
+  (.blocked[] | "  #\(.number) (spec #\(.spec)) \(.status)" + (if (.blocked_by | length) > 0 then " by " + ([.blocked_by[] | if . == "more" then "more" else "#\(.)" end] | join(", ")) else "" end)
+     + (if .status == "assigned-elsewhere" then " (" + (.assignees | join(", ")) + ")" else "" end)),
+  "Specs:",
+  (.specs[] | "  #\(.number) \(.status)" + (if .status == "needs-tickets" then " (needs /to-tickets)" else "  \(.merged)/\(.tickets) merged, \(.ready) ready, \(.running) running" end) + "  \(.title)")
+' <<<"$out"

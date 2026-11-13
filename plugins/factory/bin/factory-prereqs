@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016 # jq programs are single-quoted on purpose
+# factory-prereqs: checks the project has what the factory needs before /factory start.
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: factory-prereqs [--json] [--project DIR]
+
+Checks, in the project (default: $CLAUDE_PROJECT_DIR, else the repository's main checkout):
+  - jq, git and gh are installed, and the project is a git repository with an origin remote
+  - CLAUDE.md names a check command (or .factory/settings.json sets check_command),
+    and a check command given as a path exists
+  - docs/agents/issue-tracker.md and docs/agents/triage-labels.md exist
+  - gh is authenticated, and the repository has the ready-for-agent label
+    (its name is read from triage-labels.md)
+Prints what is missing, with the fix. Exit 0 when nothing is missing, 1 otherwise.
+--json prints {ok, project, check_command, ready_label, missing: [{check, detail, fix}]}.
+USAGE
+}
+
+root=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+# shellcheck disable=SC1091 # lib/common.sh, checked on its own
+. "$root/lib/common.sh"
+
+json=0 project=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --json) json=1 ;;
+    --project) project=${2:?}; shift ;;
+    -h | --help) usage; exit 0 ;;
+    *) echo "factory-prereqs: unknown argument $1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+[ -n "$project" ] || project=$(factory_project)
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "factory-prereqs: missing: jq is not installed (install jq; every factory tool needs it)"
+  exit 1
+fi
+
+missing='[]'
+miss() { # miss <check> <detail> <fix>
+  missing=$(jq -c --arg c "$1" --arg d "$2" --arg f "$3" '. + [{check: $c, detail: $d, fix: $f}]' <<<"$missing")
+}
+
+# --- tools and repository ---
+have_git=1 have_gh=1
+command -v git >/dev/null 2>&1 || { have_git=0; miss git "git is not installed" "install git"; }
+command -v gh >/dev/null 2>&1 || { have_gh=0; miss gh "gh (GitHub CLI) is not installed" "install gh from https://cli.github.com"; }
+if [ "$have_git" = 1 ]; then
+  if ! git -C "$project" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    miss git-repo "$project is not a git repository" "run the factory from a clone of the project"
+  elif ! git -C "$project" remote get-url origin >/dev/null 2>&1; then
+    miss git-remote "the repository has no origin remote" "add the GitHub repository as origin"
+  fi
+fi
+
+# --- check command ---
+check_command=$(factory_settings "$project" | jq -r '.check_command // empty')
+claude_md=""
+for f in "$project/CLAUDE.md" "$project/.claude/CLAUDE.md"; do [ -f "$f" ] && { claude_md=$f; break; }; done
+if [ -z "$check_command" ] && [ -n "$claude_md" ]; then
+  # First code span on a line about checks or tests that looks like a command.
+  check_command=$(grep -iE 'check|test|\bCI\b' "$claude_md" | grep -oE '`[^`]+`' | tr -d '`' |
+    grep -E '^(\./|scripts/|bin/|tools/)|\.sh( |$)|^(make|just|npm|pnpm|yarn|bun|deno|cargo|go|pytest|tox|nox|uv|poetry|mvn|gradle|\./gradlew|dotnet|bazel|mix|bundle|rake)( |$)' |
+    head -n 1 || true)
+fi
+if [ -z "$claude_md" ] && [ -z "$check_command" ]; then
+  miss claude-md "no CLAUDE.md in the project" "add a CLAUDE.md that names the check command, e.g. 'Run \`scripts/check.sh\` before every commit'"
+elif [ -z "$check_command" ]; then
+  miss check-command "CLAUDE.md names no check command" "name it in CLAUDE.md, e.g. 'Run \`scripts/check.sh\` before every commit', or set check_command in .factory/settings.json"
+else
+  first=${check_command%% *}
+  case "$first" in /*) path=$first ;; *) path="$project/$first" ;; esac
+  if [[ "$first" == */* ]] && [ ! -e "$path" ]; then
+    miss check-command "the check command \`$check_command\` names $first, which does not exist" "fix the command named in CLAUDE.md"
+  fi
+fi
+
+# --- mattpocock-skills docs ---
+for d in issue-tracker triage-labels; do
+  [ -f "$project/docs/agents/$d.md" ] || miss "$d-doc" "docs/agents/$d.md is missing" "run /setup-matt-pocock-skills in the project"
+done
+ready_label=$(factory_ready_label "$project")
+
+# --- GitHub ---
+if [ "$have_gh" = 1 ]; then
+  if ! (cd "$project" && gh auth status >/dev/null 2>&1); then
+    miss gh-auth "gh is not authenticated" "run gh auth login"
+  elif ! labels=$(cd "$project" && gh label list --limit 500 --json name --jq '.[].name' 2>/dev/null); then
+    miss ready-label "could not list the repository's labels" "check that gh can reach the repository (gh repo view)"
+  elif ! grep -qxF -- "$ready_label" <<<"$labels"; then
+    miss ready-label "the repository has no \"$ready_label\" label" "create it with /setup-matt-pocock-skills or gh label create \"$ready_label\""
+  fi
+fi
+
+ok=true
+[ "$(jq length <<<"$missing")" = 0 ] || ok=false
+if [ "$json" = 1 ]; then
+  jq -n --argjson ok "$ok" --arg project "$project" --arg cc "$check_command" --arg rl "$ready_label" \
+    --argjson missing "$missing" \
+    '{ok: $ok, project: $project, check_command: (if $cc == "" then null else $cc end), ready_label: $rl, missing: $missing}'
+else
+  if [ "$ok" = true ]; then
+    echo "factory prerequisites met in $project"
+    echo "  check command: $check_command"
+    echo "  ready label:   $ready_label"
+  else
+    echo "factory prerequisites missing in $project:"
+    jq -r '.[] | "  - \(.detail)\n      fix: \(.fix)"' <<<"$missing"
+  fi
+fi
+[ "$ok" = true ]

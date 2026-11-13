@@ -1,0 +1,755 @@
+[
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "createdAt": "2025-11-01T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 10,
+    "parent": null,
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [
+        {
+          "id": "I_11",
+          "number": 11,
+          "state": "OPEN",
+          "title": "issue 11",
+          "url": "https://github.com/o/r/issues/11"
+        },
+        {
+          "id": "I_12",
+          "number": 12,
+          "state": "OPEN",
+          "title": "issue 12",
+          "url": "https://github.com/o/r/issues/12"
+        },
+        {
+          "id": "I_13",
+          "number": 13,
+          "state": "OPEN",
+          "title": "issue 13",
+          "url": "https://github.com/o/r/issues/13"
+        },
+        {
+          "id": "I_14",
+          "number": 14,
+          "state": "OPEN",
+          "title": "issue 14",
+          "url": "https://github.com/o/r/issues/14"
+        },
+        {
+          "id": "I_15",
+          "number": 15,
+          "state": "OPEN",
+          "title": "issue 15",
+          "url": "https://github.com/o/r/issues/15"
+        },
+        {
+          "id": "I_16",
+          "number": 16,
+          "state": "OPEN",
+          "title": "issue 16",
+          "url": "https://github.com/o/r/issues/16"
+        },
+        {
+          "id": "I_17",
+          "number": 17,
+          "state": "CLOSED",
+          "title": "issue 17",
+          "url": "https://github.com/o/r/issues/17"
+        },
+        {
+          "id": "I_18",
+          "number": 18,
+          "state": "OPEN",
+          "title": "issue 18",
+          "url": "https://github.com/o/r/issues/18"
+        },
+        {
+          "id": "I_19",
+          "number": 19,
+          "state": "OPEN",
+          "title": "issue 19",
+          "url": "https://github.com/o/r/issues/19"
+        },
+        {
+          "id": "I_20",
+          "number": 20,
+          "state": "OPEN",
+          "title": "issue 20",
+          "url": "https://github.com/o/r/issues/20"
+        },
+        {
+          "id": "I_21",
+          "number": 21,
+          "state": "OPEN",
+          "title": "issue 21",
+          "url": "https://github.com/o/r/issues/21"
+        }
+      ],
+      "totalCount": 11
+    },
+    "subIssuesSummary": {
+      "completed": 1,
+      "percentCompleted": 0,
+      "total": 11
+    },
+    "title": "Spec: The graph"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [
+        {
+          "id": "I_12",
+          "number": 12,
+          "state": "OPEN",
+          "title": "issue 12",
+          "url": "https://github.com/o/r/issues/12"
+        }
+      ],
+      "totalCount": 1
+    },
+    "createdAt": "2026-01-01T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 11,
+    "parent": {
+      "id": "I_10",
+      "number": 10,
+      "state": "OPEN",
+      "title": "Spec 10",
+      "url": "https://github.com/o/r/issues/10"
+    },
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 0
+    },
+    "title": "Base types"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [
+        {
+          "id": "I_11",
+          "number": 11,
+          "state": "OPEN",
+          "title": "issue 11",
+          "url": "https://github.com/o/r/issues/11"
+        }
+      ],
+      "totalCount": 1
+    },
+    "blocking": {
+      "nodes": [
+        {
+          "id": "I_13",
+          "number": 13,
+          "state": "OPEN",
+          "title": "issue 13",
+          "url": "https://github.com/o/r/issues/13"
+        }
+      ],
+      "totalCount": 1
+    },
+    "createdAt": "2026-01-02T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 12,
+    "parent": {
+      "id": "I_10",
+      "number": 10,
+      "state": "OPEN",
+      "title": "Spec 10",
+      "url": "https://github.com/o/r/issues/10"
+    },
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 0
+    },
+    "title": "Uses the base"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [
+        {
+          "id": "I_12",
+          "number": 12,
+          "state": "OPEN",
+          "title": "issue 12",
+          "url": "https://github.com/o/r/issues/12"
+        }
+      ],
+      "totalCount": 1
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "createdAt": "2026-01-03T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 13,
+    "parent": {
+      "id": "I_10",
+      "number": 10,
+      "state": "OPEN",
+      "title": "Spec 10",
+      "url": "https://github.com/o/r/issues/10"
+    },
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 0
+    },
+    "title": "Uses the use"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "createdAt": "2025-12-01T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 14,
+    "parent": {
+      "id": "I_10",
+      "number": 10,
+      "state": "OPEN",
+      "title": "Spec 10",
+      "url": "https://github.com/o/r/issues/10"
+    },
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 0
+    },
+    "title": "Old small fix"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "createdAt": "2026-02-01T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      },
+      {
+        "id": "LA_security",
+        "name": "security",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 15,
+    "parent": {
+      "id": "I_10",
+      "number": 10,
+      "state": "OPEN",
+      "title": "Spec 10",
+      "url": "https://github.com/o/r/issues/10"
+    },
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 0
+    },
+    "title": "Escape the shell argument"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [
+        {
+          "id": "I_17",
+          "number": 17,
+          "state": "CLOSED",
+          "title": "issue 17",
+          "url": "https://github.com/o/r/issues/17"
+        }
+      ],
+      "totalCount": 1
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "createdAt": "2026-02-02T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      },
+      {
+        "id": "LA_priority:high",
+        "name": "priority:high",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 16,
+    "parent": {
+      "id": "I_10",
+      "number": 10,
+      "state": "OPEN",
+      "title": "Spec 10",
+      "url": "https://github.com/o/r/issues/10"
+    },
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 0
+    },
+    "title": "High priority work"
+  },
+  {
+    "assignees": [
+      {
+        "id": "U_someone",
+        "login": "someone",
+        "name": "someone"
+      }
+    ],
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "createdAt": "2025-10-01T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 18,
+    "parent": {
+      "id": "I_10",
+      "number": 10,
+      "state": "OPEN",
+      "title": "Spec 10",
+      "url": "https://github.com/o/r/issues/10"
+    },
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 0
+    },
+    "title": "Taken by a person"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "createdAt": "2026-02-03T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": {
+      "number": 2,
+      "title": "M2",
+      "description": "",
+      "dueOn": "2026-03-01T00:00:00Z"
+    },
+    "number": 19,
+    "parent": {
+      "id": "I_10",
+      "number": 10,
+      "state": "OPEN",
+      "title": "Spec 10",
+      "url": "https://github.com/o/r/issues/10"
+    },
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 0
+    },
+    "title": "Later milestone"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "createdAt": "2026-02-04T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": {
+      "number": 1,
+      "title": "M1",
+      "description": "",
+      "dueOn": "2026-02-01T00:00:00Z"
+    },
+    "number": 20,
+    "parent": {
+      "id": "I_10",
+      "number": 10,
+      "state": "OPEN",
+      "title": "Spec 10",
+      "url": "https://github.com/o/r/issues/10"
+    },
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 0
+    },
+    "title": "Earlier milestone"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [
+        {
+          "id": "I_17",
+          "number": 17,
+          "state": "CLOSED",
+          "title": "issue 17",
+          "url": "https://github.com/o/r/issues/17"
+        }
+      ],
+      "totalCount": 30
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "createdAt": "2026-02-05T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 21,
+    "parent": {
+      "id": "I_10",
+      "number": 10,
+      "state": "OPEN",
+      "title": "Spec 10",
+      "url": "https://github.com/o/r/issues/10"
+    },
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 0
+    },
+    "title": "Many blockers, few listed"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "createdAt": "2026-01-05T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 30,
+    "parent": null,
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 0
+    },
+    "title": "Spec: No tickets yet"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "createdAt": "2026-01-06T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 40,
+    "parent": null,
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [
+        {
+          "id": "I_41",
+          "number": 41,
+          "state": "OPEN",
+          "title": "issue 41",
+          "url": "https://github.com/o/r/issues/41"
+        }
+      ],
+      "totalCount": 1
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 1
+    },
+    "title": "Spec: Only human tickets"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "createdAt": "2026-01-07T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 50,
+    "parent": null,
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [
+        {
+          "id": "I_51",
+          "number": 51,
+          "state": "OPEN",
+          "title": "issue 51",
+          "url": "https://github.com/o/r/issues/51"
+        },
+        {
+          "id": "I_52",
+          "number": 52,
+          "state": "CLOSED",
+          "title": "issue 52",
+          "url": "https://github.com/o/r/issues/52"
+        }
+      ],
+      "totalCount": 2
+    },
+    "subIssuesSummary": {
+      "completed": 1,
+      "percentCompleted": 0,
+      "total": 2
+    },
+    "title": "Spec: All merged"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "createdAt": "2026-01-08T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 51,
+    "parent": {
+      "id": "I_50",
+      "number": 50,
+      "state": "OPEN",
+      "title": "Spec 50",
+      "url": "https://github.com/o/r/issues/50"
+    },
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 0
+    },
+    "title": "Merged but open"
+  }
+]

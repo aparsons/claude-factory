@@ -9,6 +9,16 @@ A Claude Code plugin that turns your session into the manager of an agent-driven
 /plugin install factory@claude-factory
 ```
 
-Status: being specified. See the open spec issue, [`GLOSSARY.md`](GLOSSARY.md) and [`docs/adr/`](docs/adr/).
+## Use
+
+In a project that follows the mattpocock-skills issue conventions (specs and tickets as issues, the triage labels, a check command named in `CLAUDE.md`):
+
+- `/factory start`: checks prerequisites, then runs an implementer per ready ticket in rank order, each in its own worktree on the spec's integration branch `spec/<n>-<slug>`, and a merger that merges it there. It never merges to the default branch, tags, publishes or comments without asking.
+- `/factory status`: frontier, running agents, blocked specs, KPIs.
+- `/factory stop`: no new agents; offers to stop running ones; writes a digest.
+
+State, ledger and digests live in the project's `.factory/` (kept out of `git status` through `.git/info/exclude`). Optional `.factory/settings.json` keys: `builder_cap`, `disk_reserve_gb`, `temp_min_gb`, `default_worktree_gb` (spawn gate); `check_command`; `priority_labels` (ordered, highest first); `factory_assignee` (a login whose assignment still counts as free); `roles` and `deep_when` (over `plugins/factory/data/roles.json`).
+
+Status: being built. See the open spec issue, [`GLOSSARY.md`](GLOSSARY.md) and [`docs/adr/`](docs/adr/).
 
 Licensed under Apache 2.0.

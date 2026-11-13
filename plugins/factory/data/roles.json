@@ -1,0 +1,16 @@
+{
+  "note": "The one role table: default model and effort per role (spec #1, user story 17), and when a ticket needs the deep implementer. factory-frontier reads it to suggest each ticket's role; the factory skill reads it for the merger. Ticket #6 moves these defaults into the agent definitions' frontmatter; until then agents start as general-purpose with these values. Override per project with .factory/settings.json keys roles and deep_when.",
+  "roles": {
+    "implementer":        { "model": "sonnet", "effort": "high",   "builder": true,  "for": "well-specified tickets" },
+    "implementer-deep":   { "model": "opus",   "effort": "high",   "builder": true,  "for": "security and foundational tickets" },
+    "merger":             { "model": "haiku",  "effort": "low",    "builder": false, "for": "merging a finished ticket into its integration branch" },
+    "standards-reviewer": { "model": "sonnet", "effort": "medium", "builder": false, "for": "standards and docs review" },
+    "spec-reviewer":      { "model": "opus",   "effort": "high",   "builder": false, "for": "spec and security review" },
+    "watcher":            { "model": "haiku",  "effort": "low",    "builder": false, "for": "CI watching, cleanup and lookups" }
+  },
+  "deep_when": {
+    "security": true,
+    "labels": ["foundation", "foundational", "architecture", "breaking-change"],
+    "unblocks_at_least": 3
+  }
+}
