@@ -1,0 +1,17 @@
+{
+  "description": "claude-factory hooks",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/spawn-gate.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
