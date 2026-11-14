@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2016 # jq programs are single-quoted on purpose
+# shellcheck disable=SC2016,SC2001 # jq programs are single-quoted on purpose; sed keeps the heading regex readable
 # factory-spec-report: the spec report committed in a spec's pull request, and the issues that
 # pull request must close.
 set -euo pipefail

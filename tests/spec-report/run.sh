@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2015 # `test && check || fail` is the assertion form
+# shellcheck disable=SC2015,SC2016 # `test && check || fail` is the assertion form; single quotes hold literal $
 # Suite: factory-spec-report writes a spec's report into docs/factory/reports/ (progress, KPIs,
 # cost, escalations, review findings, lessons) and lists the issues its pull request must close.
 set -euo pipefail
@@ -40,7 +40,9 @@ grep -qE '^\| #4 \| Lexer \| merged \| abc1234 \|' "$report" || fail "merged tic
 if grep -q 'fix9999' "$report"; then fail "the review fixer's merge (keyed by the spec's number) is not a ticket"; fi; ok
 grep -qE '^\| #6 \| Error messages \| running \|' "$report" || fail "running ticket row"; ok
 grep -q 'Escalations' "$report" && grep -q 'implementer to implementer-deep' "$report" && grep -q 'gate failed twice' "$report" || fail "escalation of the spec's ticket"; ok
-if grep -q 'other spec' "$report"; then fail "another spec's escalation leaked in"; fi; ok
+# the spec's own section (the project KPI table further down lists every escalation)
+section=$(awk '/^## Escalations/ {on = 1; next} /^## / {on = 0} on' "$report")
+grep -q '#5' <<<"$section" && ! grep -q 'other spec' <<<"$section" || fail "another spec's escalation leaked in"; ok
 grep -qE '^\| standards-reviewer \| 2 \|' "$report" && grep -qE '^\| spec-reviewer \| 1 \|' "$report" || fail "review findings of this spec"; ok
 if grep -qE '^\| spec-reviewer \| 9 \|' "$report"; then fail "another spec's review leaked in"; fi; ok
 grep -q 'First estimate: \$4.00' "$report" && grep -q 'Current estimate: \$6.50' "$report" || fail "estimates"; ok
