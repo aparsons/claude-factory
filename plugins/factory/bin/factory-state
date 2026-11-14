@@ -21,6 +21,12 @@ Usage: factory-state <command> [options]
                                the ticket is merged into its integration branch: moves the assignment
                                to merged, keeping its worktree path (P, else the assignment's) so a
                                clean-up left undone can be retried; ledger: merge {ticket, spec, branch, commit}
+  rework --ticket N --reason TEXT [--role R --model M --effort E --branch B]
+                               a merged ticket goes back for a follow-up fix: assigns it again (role,
+                               model and effort default to its earlier assignment, branch to the
+                               merged one), keeping its merge; the next merge adds its commit to the
+                               record and keeps the old one. ledger: gate {result: fail, reason} then
+                               rework {ticket, spec, reason, role, model, effort, branch}
   gate --ticket N --result pass|fail [--tests-added K]
                                ledger only: gate {ticket, spec, result, tests_added}
   integration --spec S --branch B [--worktree P] [--status active|complete]
@@ -175,11 +181,38 @@ merge)
   [ -n "$commit" ] || die "merge needs --commit"
   a=$(current | jq -c --arg t "$ticket" '.assignments[$t] // empty')
   [ -n "$a" ] || die "ticket #$ticket has no assignment"
-  mutate '.merged[$t] = {ticket: $a.ticket, spec: $a.spec, branch: $a.branch}
+  # a ticket merged again after a rework keeps its earlier commits: commits lists them all
+  mutate '(.merged[$t] // null) as $prev
+      | .merged[$t] = {ticket: $a.ticket, spec: $a.spec, branch: $a.branch}
         + (if ($wt != "" or $a.worktree != null) then {worktree: (if $wt != "" then $wt else $a.worktree end)} else {} end)
         + {commit: $c, merged_at: $now}
+        + (if $prev == null then {} else {commits: (($prev.commits // [$prev.commit]) + [$c])} end)
       | del(.assignments[$t])' --arg t "$ticket" --argjson a "$a" --arg c "$commit" --arg wt "$worktree"
   event '{event: "merge", ticket: $a.ticket, spec: $a.spec, branch: $a.branch, commit: $c}' --argjson a "$a" --arg c "$commit"
+  ;;
+rework)
+  need_num --ticket "$ticket"
+  [ -n "$reason" ] || die "rework needs --reason"
+  m=$(current | jq -c --arg t "$ticket" '.merged[$t] // empty')
+  [ -n "$m" ] || die "ticket #$ticket is not merged; only a merged ticket can be reworked"
+  current | jq -e --arg t "$ticket" '.assignments | has($t) | not' >/dev/null || die "ticket #$ticket already has an assignment"
+  # what the ticket was first assigned with, unless given
+  prev="{}"
+  if [ -f "$ledger" ]; then
+    prev=$(jq -s -c --argjson t "$ticket" '[.[] | select(type == "object" and .event == "assign" and .ticket == $t)] | last // {}' "$ledger")
+  fi
+  spec=$(jq -r .spec <<<"$m")
+  [ -n "$role" ] || role=$(jq -r '.role // "implementer"' <<<"$prev")
+  [ -n "$model" ] || model=$(jq -r '.model // "sonnet"' <<<"$prev")
+  [ -n "$effort" ] || effort=$(jq -r '.effort // "high"' <<<"$prev")
+  [ -n "$branch" ] || branch=$(jq -r '.branch' <<<"$m")
+  mutate '.assignments[$t] = {ticket: ($t | tonumber), spec: ($s | tonumber), role: $role, model: $model,
+      effort: $effort, branch: $branch, worktree: null, agent: null, started: $now}' \
+    --arg t "$ticket" --arg s "$spec" --arg role "$role" --arg model "$model" --arg effort "$effort" --arg branch "$branch"
+  event '{event: "gate", ticket: ($t | tonumber), spec: ($s | tonumber), result: "fail", tests_added: null, reason: $r}' \
+    --arg t "$ticket" --arg s "$spec" --arg r "$reason"
+  event '{event: "rework", ticket: ($t | tonumber), spec: ($s | tonumber), reason: $r, role: $role, model: $model, effort: $effort, branch: $branch}' \
+    --arg t "$ticket" --arg s "$spec" --arg r "$reason" --arg role "$role" --arg model "$model" --arg effort "$effort" --arg branch "$branch"
   ;;
 gate)
   need_num --ticket "$ticket"

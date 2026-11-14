@@ -197,6 +197,37 @@ git -C "$p" worktree unlock "$p/.claude/worktrees/agent-25"
 [ "$("$fi_" leftovers)" = "No leftover worktrees or branches." ] || fail "nothing left over: $("$fi_" leftovers)"; ok
 kill "$live" 2>/dev/null || true
 
+# --- rework: a merged ticket is sent back for a follow-up fix and merged again ---
+# Ticket 12 merged at the top of this suite. Its check had passed; a later failure (the live run's
+# macOS CI) sends it back. The follow-up reuses the ticket's branch name, which is free again.
+first=$("$st" show | jq -r '.merged["12"].commit')
+"$st" gate --ticket 12 --result pass --tests-added 1
+"$st" rework --ticket 12 --reason "macOS CI failed" || fail "rework"
+"$st" show | jq -e --arg c "$first" '.assignments["12"] | .spec == 3 and .branch == "t12-parse" and .role == "implementer"' >/dev/null || fail "rework: assigned again"; ok
+"$st" show | jq -e --arg c "$first" '.merged["12"].commit == $c' >/dev/null || fail "rework: the earlier merge is kept"; ok
+w12="$p/.claude/worktrees/agent-12b"
+git -C "$p" worktree add -q -b t12-parse "$w12" origin/spec/3-parser
+echo fix >"$w12/fix12.txt" && git -C "$w12" add fix12.txt && git -C "$w12" commit -q -m "fix for ticket 12"
+"$st" update --ticket 12 --worktree "$w12"
+# the follow-up's branch must not be taken for a leftover of the first merge
+"$fi_" leftovers --json | jq -e 'map(.ticket) | index(12) == null' >/dev/null || fail "leftovers lists the follow-up of a reworked ticket: $("$fi_" leftovers --json)"; ok
+"$fi_" cleanup >/dev/null
+[ -d "$w12" ] && git -C "$p" rev-parse -q --verify refs/heads/t12-parse >/dev/null || fail "cleanup removed the follow-up's worktree or branch"; ok
+out=$("$fi_" merge --ticket 12 --branch t12-parse --worktree "$w12" --title "Parse the header") || fail "merge after rework: $out"
+jq -e '.result == "merged" and .worktree_removed == true and .branch_deleted == true' <<<"$out" >/dev/null || fail "merge after rework output: $out"; ok
+second=$(jq -r .commit <<<"$out")
+[ "$second" != "$first" ] && [ "$(o rev-parse spec/3-parser)" = "$second" ] || fail "the follow-up merge was pushed"; ok
+[ -f "$wt/fix12.txt" ] || fail "the follow-up's change is in the integration branch"; ok
+"$st" show | jq -e --arg a "$first" --arg b "$second" '(.assignments | has("12") | not) and (.merged["12"] | .commit == $b and .commits == [$a, $b])' >/dev/null || fail "state: merged record gains the new commit and keeps the old: $("$st" show | jq -c '.merged["12"]')"; ok
+led="$p/.factory/ledger.jsonl"
+jq -s -e --arg a "$first" --arg b "$second" '[.[] | select(.ticket == 12 and (.event == "merge" or .event == "gate" or .event == "rework")) | [.event, .result, .commit, .reason]]
+    == [["merge", null, $a, null], ["gate", "pass", null, null], ["gate", "fail", null, "macOS CI failed"], ["rework", null, null, "macOS CI failed"], ["merge", null, $b, null]]' "$led" >/dev/null ||
+  fail "ledger: merge, gate pass, gate fail, rework, merge: $(jq -c 'select(.ticket == 12) | [.event, .result, .commit, .reason]' "$led")"; ok
+"$root/plugins/factory/bin/factory-kpis" --json --ledger "$led" | jq -e '.quality | (.first_try_gate_pass_rate == 0)
+    and (.rework_by_ticket | map(select(.ticket == 12)) == [{ticket: 12, failed_gates: 0, review_send_backs: 1, escalations: 0, total: 1}])' >/dev/null ||
+  fail "kpis: ticket 12 is not first-try and its rework is counted: $("$root/plugins/factory/bin/factory-kpis" --json --ledger "$led" | jq -c .quality)"; ok
+"$root/plugins/factory/bin/factory-kpis" --ledger "$led" | grep -qE '^\| #12 \| 0 \| 1 \| 0 \| 1 \|' || fail "kpis table: the rework row for #12"; ok
+
 # --- diverged: the local integration branch and origin both moved ---
 git clone -q -b spec/3-parser "$tmp/origin.git" "$tmp/other"
 echo other >"$tmp/other/e.txt" && git -C "$tmp/other" add e.txt && git -C "$tmp/other" commit -q -m other && git -C "$tmp/other" push -q origin spec/3-parser
