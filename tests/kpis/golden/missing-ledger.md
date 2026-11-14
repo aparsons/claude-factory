@@ -8,6 +8,9 @@ Ledger: 0 events.
 | --- | --- |
 | Tickets merged per day | n/a |
 | Lead time (median) | n/a |
+| Merge time (median) | n/a |
+| Merge time (total) | n/a |
+| Merge time spent queued (total) | n/a |
 | Frontier size | n/a |
 | Active agents | n/a |
 | Stalls | n/a |

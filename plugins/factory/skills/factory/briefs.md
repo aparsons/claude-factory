@@ -21,10 +21,12 @@ Before you report:
 Report in under 150 words: branch, worktree path (`pwd`), head commit, check result with evidence (the last summary line; on failure what failed), number of tests added, and anything the next tickets must know.
 ```
 
-## Merger
+## Merger (not used today)
+
+The manager runs `factory-integration merge` itself as a background command (start.md, steps 5 and 6); no merger agent is started. This brief stays for a project whose merges need judgement.
 
 ```
-Merge ticket #<ticket> into its spec's integration branch. Run exactly this, and wait for it: the push runs the project's pre-push hook, which can take minutes.
+Merge ticket #<ticket> into its spec's integration branch. Run exactly this, and wait for it: it may first queue behind another merge into the same integration branch, and the push runs the project's pre-push hook, which can take minutes. Do not add waits or locks of your own.
   ${CLAUDE_PLUGIN_ROOT}/bin/factory-integration merge --ticket <ticket> --branch <branch> --worktree <worktree> --title "<title>"
 Do nothing else: do not resolve conflicts, edit files, retry with other flags, skip hooks, or comment on issues. Report its exit code and its JSON output verbatim.
 ```

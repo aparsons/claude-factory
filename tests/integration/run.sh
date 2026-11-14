@@ -67,6 +67,7 @@ jq -e '.result == "merged" and .worktree_removed == true and .branch_deleted == 
 ! git -C "$p" rev-parse -q --verify refs/heads/t12-parse >/dev/null || fail "ticket branch deleted"; ok
 "$st" show | jq -e '(.assignments | has("12") | not) and .merged["12"].commit != null' >/dev/null || fail "state merged"; ok
 tail -n 1 "$p/.factory/ledger.jsonl" | jq -e '.event == "merge" and .ticket == 12 and .spec == 3' >/dev/null || fail "merge event"; ok
+tail -n 1 "$p/.factory/ledger.jsonl" | jq -e '.result == "merged" and .commit != null and (.duration_s | type == "number") and .duration_s >= 0 and .waited_s == null' >/dev/null || fail "merge event records the result and duration: $(tail -n 1 "$p/.factory/ledger.jsonl")"; ok
 [ "$(git -C "$p" symbolic-ref --short HEAD)" = main ] && [ "$(git -C "$p" rev-parse main)" = "$(o rev-parse main)" ] || fail "main untouched"; ok
 
 # --- the first merge opens the spec's draft pull request ---
@@ -96,6 +97,7 @@ prs -e '.[0].isDraft' >/dev/null || fail "still a draft"; ok
 before=$(o rev-parse spec/3-parser)
 code=0; out=$("$fi_" merge --ticket 14 --branch t14-b --worktree "$p/.claude/worktrees/agent-14") || code=$?
 [ "$code" = 3 ] && jq -e '.result == "conflict" and .files == ["c.txt"]' <<<"$out" >/dev/null || fail "conflict ($code): $out"; ok
+tail -n 1 "$p/.factory/ledger.jsonl" | jq -e '.event == "merge" and .ticket == 14 and .result == "conflict" and .commit == null and (.duration_s | type == "number")' >/dev/null || fail "conflict recorded as a merge event: $(tail -n 1 "$p/.factory/ledger.jsonl")"; ok
 [ "$(o rev-parse spec/3-parser)" = "$before" ] || fail "nothing pushed on conflict"; ok
 [ -z "$(git -C "$wt" status --porcelain --untracked-files=no)" ] && [ "$(git -C "$wt" rev-parse HEAD)" = "$before" ] || fail "integration worktree left clean"; ok
 [ -d "$p/.claude/worktrees/agent-14" ] && git -C "$p" rev-parse -q --verify refs/heads/t14-b >/dev/null || fail "worktree and branch kept on conflict"; ok
@@ -109,6 +111,7 @@ printf '#!/bin/sh\necho "check failed: test x" >&2\nexit 1\n' >"$p/.git/hooks/pr
 chmod +x "$p/.git/hooks/pre-push"
 code=0; out=$("$fi_" merge --ticket 15 --branch t15-c --worktree "$p/.claude/worktrees/agent-15") || code=$?
 [ "$code" = 4 ] && jq -e '.result == "push-failed" and (.output | contains("check failed: test x"))' <<<"$out" >/dev/null || fail "push failure ($code): $out"; ok
+tail -n 1 "$p/.factory/ledger.jsonl" | jq -e '.event == "merge" and .ticket == 15 and .result == "push-failed" and (.duration_s | type == "number")' >/dev/null || fail "push failure recorded as a merge event: $(tail -n 1 "$p/.factory/ledger.jsonl")"; ok
 [ "$(git -C "$wt" rev-parse HEAD)" = "$(o rev-parse spec/3-parser)" ] || fail "local merge undone after the push failed"; ok
 "$st" show | jq -e '.assignments | has("15")' >/dev/null || fail "assignment kept after the push failed"; ok
 rm "$p/.git/hooks/pre-push"
@@ -197,6 +200,97 @@ git -C "$p" worktree unlock "$p/.claude/worktrees/agent-25"
 [ "$("$fi_" leftovers)" = "No leftover worktrees or branches." ] || fail "nothing left over: $("$fi_" leftovers)"; ok
 kill "$live" 2>/dev/null || true
 
+# --- queued merges: merges into one integration branch take turns, in start order ---
+# implement_in <spec> <integration branch> <ticket> <branch> <file> <content>
+implement_in() {
+  local w="$p/.claude/worktrees/agent-$3"
+  git -C "$p" worktree add -q -b "$4" "$w" "origin/$2"
+  echo "$6" >"$w/$5"
+  git -C "$w" add "$5" && git -C "$w" commit -q -m "ticket $3"
+  "$st" assign --ticket "$3" --spec "$1" --role implementer --model sonnet --effort high --branch "$4" --worktree "$w"
+}
+# a pre-push hook that logs "start <ref>" and "end <ref>" around a pause
+hooklog="$tmp/hook.log"
+cat >"$p/.git/hooks/pre-push" <<HOOK
+#!/bin/sh
+ref=\$(cat | awk '{print \$3; exit}')
+echo "start \$ref" >>"$hooklog"
+sleep 1
+echo "end \$ref" >>"$hooklog"
+HOOK
+chmod +x "$p/.git/hooks/pre-push"
+locks="$p/.factory/locks"
+queued() { find "$locks" -type f -name 'q*' 2>/dev/null | wc -l | tr -d ' '; }
+await() { # await <what> <command...>: poll up to 20 s
+  local what=$1; shift
+  for _ in $(seq 1 200); do if "$@"; then return 0; fi; sleep 0.1; done
+  fail "timed out waiting for $what"
+}
+holder_started() { grep -q "^start refs/heads/spec/3-parser" "$hooklog" 2>/dev/null; }
+queue_has() { [ "$(queued)" -ge "$1" ]; }
+
+implement 16 t16-a g1.txt one
+implement 17 t17-b g2.txt two
+implement 18 t18-c g3.txt three
+: >"$hooklog"
+"$fi_" merge --ticket 16 --branch t16-a --worktree "$p/.claude/worktrees/agent-16" >"$tmp/m16.out" 2>"$tmp/m16.err" &
+pid16=$!
+await "merge 16 to hold the lock" holder_started
+"$fi_" merge --ticket 17 --branch t17-b --worktree "$p/.claude/worktrees/agent-17" >"$tmp/m17.out" 2>"$tmp/m17.err" &
+pid17=$!
+await "merge 17 to queue" queue_has 2
+"$fi_" merge --ticket 18 --branch t18-c --worktree "$p/.claude/worktrees/agent-18" >"$tmp/m18.out" 2>"$tmp/m18.err" &
+pid18=$!
+await "merge 18 to queue" queue_has 3
+wait "$pid16" || fail "queued merge 16 failed: $(cat "$tmp/m16.out" "$tmp/m16.err")"
+wait "$pid17" || fail "queued merge 17 failed: $(cat "$tmp/m17.out" "$tmp/m17.err")"
+wait "$pid18" || fail "queued merge 18 failed: $(cat "$tmp/m18.out" "$tmp/m18.err")"
+for t in 16 17 18; do jq -e '.result == "merged"' "$tmp/m$t.out" >/dev/null || fail "merge $t output: $(cat "$tmp/m$t.out")"; done; ok
+[ "$(tr '\n' ' ' <"$hooklog")" = "start refs/heads/spec/3-parser end refs/heads/spec/3-parser start refs/heads/spec/3-parser end refs/heads/spec/3-parser start refs/heads/spec/3-parser end refs/heads/spec/3-parser " ] || fail "merges overlapped: $(cat "$hooklog")"; ok
+for f in g1 g2 g3; do o show "spec/3-parser:$f.txt" >/dev/null || fail "$f.txt not merged"; done; ok
+log=$(o log --first-parent -n 3 --format=%s spec/3-parser | tr '\n' '|')
+[ "$log" = "Merge t18-c into spec/3-parser (#18)|Merge t17-b into spec/3-parser (#17)|Merge t16-a into spec/3-parser (#16)|" ] || fail "merges ran out of start order: $log"; ok
+jq -e 'has("waited_seconds") | not' "$tmp/m16.out" >/dev/null || fail "the first merge did not wait: $(cat "$tmp/m16.out")"; ok
+jq -e "has(\"waited_seconds\")" "$tmp/m17.out" >/dev/null || fail "a merge that waited reports it: $(cat "$tmp/m17.out")"; ok
+jq -e '.waited_seconds >= 1' "$tmp/m18.out" >/dev/null || fail "the last merge waited for both: $(cat "$tmp/m18.out")"; ok
+jq -s -e '[.[] | select(.event == "merge" and .ticket == 18)] | length == 1 and .[0].result == "merged" and .[0].waited_s >= 1 and .[0].duration_s >= .[0].waited_s' "$p/.factory/ledger.jsonl" >/dev/null || fail "the queued merge's event carries its wait and a duration that includes it"; ok
+[ "$(queued)" = 0 ] || fail "locks released on exit"; ok
+
+# --- a stale lock: its holder is gone, the next merge takes over and says so ---
+implement 19 t19-d g4.txt four
+sleep 0 & dead=$!; wait "$dead"
+slug=$(ls "$locks")
+printf 'pid=%s\nticket=77\nstarted=2026-01-01T00:00:00Z\n' "$dead" >"$locks/$slug/q00000001"
+out=$("$fi_" merge --ticket 19 --branch t19-d --worktree "$p/.claude/worktrees/agent-19" 2>"$tmp/m19.err") || fail "merge over a stale lock: $out $(cat "$tmp/m19.err")"
+jq -e '.result == "merged"' <<<"$out" >/dev/null || fail "stale takeover output: $out"; ok
+grep -q "stale" "$tmp/m19.err" && grep -q "$dead" "$tmp/m19.err" && grep -q "#77" "$tmp/m19.err" || fail "takeover said on stderr: $(cat "$tmp/m19.err")"; ok
+[ "$(queued)" = 0 ] || fail "stale entry removed, own entry released"; ok
+
+# --- a failed merge releases the lock too ---
+w20="$p/.claude/worktrees/agent-20"
+git -C "$p" worktree add -q -b t20-e "$w20" origin/main
+echo from-20 >"$w20/c.txt" && git -C "$w20" commit -q -am "ticket 20"
+"$st" assign --ticket 20 --spec 3 --role implementer --model sonnet --effort high --branch t20-e --worktree "$w20"
+code=0; "$fi_" merge --ticket 20 --branch t20-e --worktree "$w20" >/dev/null || code=$?
+[ "$code" = 3 ] || fail "conflict expected, got exit $code"
+[ "$(queued)" = 0 ] || fail "lock released after a conflict"; ok
+"$st" unassign --ticket 20 >/dev/null
+
+# --- different integration branches never wait for each other ---
+"$fi_" ensure --spec 5 --branch spec/5-other >/dev/null
+implement 21 t21-f h1.txt x
+implement_in 5 spec/5-other 22 t22-g h2.txt y
+: >"$hooklog"
+"$fi_" merge --ticket 21 --branch t21-f --worktree "$p/.claude/worktrees/agent-21" >"$tmp/m21.out" 2>&1 &
+pid21=$!
+"$fi_" merge --ticket 22 --branch t22-g --worktree "$p/.claude/worktrees/agent-22" >"$tmp/m22.out" 2>&1 &
+pid22=$!
+wait "$pid21" || fail "merge 21: $(cat "$tmp/m21.out")"
+wait "$pid22" || fail "merge 22: $(cat "$tmp/m22.out")"
+[ "$(head -n 2 "$hooklog" | cut -d' ' -f1 | tr '\n' ' ')" = "start start " ] || fail "merges into different branches overlapped: $(cat "$hooklog")"; ok
+jq -e 'has("waited_seconds") | not' "$tmp/m21.out" >/dev/null && jq -e 'has("waited_seconds") | not' "$tmp/m22.out" >/dev/null || fail "neither waited"; ok
+rm "$p/.git/hooks/pre-push"
+
 # --- rework: a merged ticket is sent back for a follow-up fix and merged again ---
 # Ticket 12 merged at the top of this suite. Its check had passed; a later failure (the live run's
 # macOS CI) sends it back. The follow-up reuses the ticket's branch name, which is free again.
@@ -221,7 +315,7 @@ second=$(jq -r .commit <<<"$out")
 "$st" show | jq -e --arg a "$first" --arg b "$second" '(.assignments | has("12") | not) and (.merged["12"] | .commit == $b and .commits == [$a, $b])' >/dev/null || fail "state: merged record gains the new commit and keeps the old: $("$st" show | jq -c '.merged["12"]')"; ok
 led="$p/.factory/ledger.jsonl"
 jq -s -e --arg a "$first" --arg b "$second" '[.[] | select(.ticket == 12 and (.event == "merge" or .event == "gate" or .event == "rework")) | [.event, .result, .commit, .reason]]
-    == [["merge", null, $a, null], ["gate", "pass", null, null], ["gate", "fail", null, "macOS CI failed"], ["rework", null, null, "macOS CI failed"], ["merge", null, $b, null]]' "$led" >/dev/null ||
+    == [["merge", "merged", $a, null], ["gate", "pass", null, null], ["gate", "fail", null, "macOS CI failed"], ["rework", null, null, "macOS CI failed"], ["merge", "merged", $b, null]]' "$led" >/dev/null ||
   fail "ledger: merge, gate pass, gate fail, rework, merge: $(jq -c 'select(.ticket == 12) | [.event, .result, .commit, .reason]' "$led")"; ok
 "$root/plugins/factory/bin/factory-kpis" --json --ledger "$led" | jq -e '.quality | (.first_try_gate_pass_rate == 0)
     and (.rework_by_ticket | map(select(.ticket == 12)) == [{ticket: 12, failed_gates: 0, review_send_backs: 1, escalations: 0, total: 1}])' >/dev/null ||
@@ -235,6 +329,7 @@ echo local >"$wt/f.txt" && git -C "$wt" add f.txt && git -C "$wt" commit -q -m l
 implement 17 t17-e h.txt seventeen
 code=0; out=$("$fi_" merge --ticket 17 --branch t17-e --worktree "$p/.claude/worktrees/agent-17") || code=$?
 [ "$code" = 4 ] && jq -e '.result == "diverged"' <<<"$out" >/dev/null || fail "diverged ($code): $out"; ok
+tail -n 1 "$p/.factory/ledger.jsonl" | jq -e '.event == "merge" and .ticket == 17 and .result == "diverged" and (.duration_s | type == "number")' >/dev/null || fail "divergence recorded as a merge event: $(tail -n 1 "$p/.factory/ledger.jsonl")"; ok
 
 # --- refusals ---
 if "$fi_" merge --ticket 99 --branch t99-x 2>/dev/null; then fail "merge of an unassigned ticket"; fi; ok

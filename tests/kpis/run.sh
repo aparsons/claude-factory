@@ -35,11 +35,22 @@ case_ gate-pass-only --ledger "$fx/gate-pass-only.jsonl"
 case_ gate-fail-then-pass --ledger "$fx/gate-fail-then-pass.jsonl"
 case_ gate-pass-fail-pass --ledger "$fx/gate-pass-fail-pass.jsonl"
 case_ gate-sequences --ledger "$fx/gate-sequences.jsonl"
+# Merge time: from `merge` events that carry a duration (any result, queueing included); older events without one are ignored.
+case_ merge-times --ledger "$fx/merge-times.jsonl"
 
 # Explicit rule check (not only goldens): first-try rate and rework per ticket for pass-fail-pass.
 got=$("$kpis" --json --ledger "$fx/gate-pass-fail-pass.jsonl" | jq -c '[.quality.first_try_gate_pass_rate, .quality.rework_by_ticket[0].review_send_backs]')
 count=$((count + 1))
 [ "$got" = "[0,1]" ] || { echo "FAIL: pass-fail-pass gave $got, want [0,1]"; fail=1; }
+
+# Explicit rule check: three timed merges of 90s (conflict), 30s and 600s (queued 540s): median 90s, total 720s.
+got=$("$kpis" --json --ledger "$fx/merge-times.jsonl" | jq -c '.flow | [.merge_time_median_s, .merge_time_total_s, .merge_wait_total_s]')
+count=$((count + 1))
+[ "$got" = "[90,720,540]" ] || { echo "FAIL: merge times gave $got, want [90,720,540]"; fail=1; }
+# No timed merge recorded: n/a, never 0.
+got=$("$kpis" --json --ledger "$fx/gate-pass-only.jsonl" | jq -c '.flow | [.merge_time_median_s, .merge_time_total_s, .merge_wait_total_s]')
+count=$((count + 1))
+[ "$got" = "[null,null,null]" ] || { echo "FAIL: no merges gave $got, want nulls"; fail=1; }
 
 # Cost is the range of the prices file: one Sonnet 5.5 run of 1M input tokens costs $2 at both ends.
 printf '%s\n' '{"ts":"2026-01-01T00:00:00Z","event":"agent_stop","agent_id":"x","role":"other","model":"claude-sonnet-5-5-20260101","ticket":null,"tokens":{"input":1000000,"output":null,"cache_read":null,"cache_creation":null}}' >"$tmp/one.jsonl"

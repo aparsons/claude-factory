@@ -64,9 +64,25 @@ lastev "gate event" '.event == "gate" and .ticket == 12 and .spec == 3 and .resu
 fails "gate needs pass or fail" "$st" gate --ticket 12 --result maybe
 "$st" merge --ticket 12 --commit abc123
 check "merge moves the assignment" '(.assignments == {}) and .merged["12"] == {ticket: 12, spec: 3, branch: "t12-parse", worktree: "/w/agent-1", commit: "abc123", merged_at: "2026-01-01T10:00:00Z"}'
-lastev "merge event" '. == {ts: "2026-01-01T10:00:00Z", event: "merge", ticket: 12, spec: 3, branch: "t12-parse", commit: "abc123", session_id: null}'
+lastev "merge event" '. == {ts: "2026-01-01T10:00:00Z", event: "merge", ticket: 12, spec: 3, branch: "t12-parse", commit: "abc123", result: "merged", duration_s: null, waited_s: null, session_id: null}'
 fails "merge of an unassigned ticket" "$st" merge --ticket 12 --commit abc
 fails "merge without a commit" "$st" merge --ticket 12
+
+# a merge event records its result and how long it took (the manager runs the merge, the tool times it)
+"$st" assign --ticket 13 --spec 3 --role implementer --model sonnet --effort high --branch t13-body
+"$st" merge --ticket 13 --commit def456 --duration-s 42 --waited-s 5
+lastev "merge event with duration" '.event == "merge" and .ticket == 13 and .result == "merged" and .duration_s == 42 and .waited_s == 5 and .commit == "def456"'
+"$st" assign --ticket 14 --spec 3 --role implementer --model sonnet --effort high --branch t14-b
+state_before=$(cat "$state")
+"$st" merge --ticket 14 --result conflict --duration-s 7
+lastev "conflict event" '.event == "merge" and .ticket == 14 and .spec == 3 and .branch == "t14-b" and .result == "conflict" and .duration_s == 7 and .commit == null'
+[ "$(cat "$state")" = "$state_before" ] || fail "a merge that did not merge leaves the state alone"
+pass=$((pass + 1))
+"$st" merge --ticket 14 --result push-failed --duration-s 9
+lastev "push-failed event" '.result == "push-failed" and .duration_s == 9'
+fails "merge result must be known" "$st" merge --ticket 14 --result maybe --duration-s 1
+fails "duration must be a number" "$st" merge --ticket 14 --result conflict --duration-s soon
+fails "merged needs a commit" "$st" merge --ticket 14 --result merged
 
 # --- integration, estimate, running ---
 "$st" integration --spec 3 --branch spec/3-parser --worktree /p/.claude/worktrees/spec-3
