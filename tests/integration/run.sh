@@ -128,6 +128,75 @@ implement 16 t16-d g.txt sixteen
 out=$(FAKE_GH_FAIL=1 "$fi_" merge --ticket 16 --branch t16-d --worktree "$p/.claude/worktrees/agent-16") || fail "merge without gh: $out"
 jq -e '.result == "merged" and .pull_request == null and (.pull_request_error | length > 0)' <<<"$out" >/dev/null || fail "merge without gh reports no pull request: $out"; ok
 
+# --- clean-up through Claude Code's worktree locks ---
+# Claude Code locks an agent's worktree with a reason like "claude agent agent-<id> (pid N start S)",
+# and the pid is the long-lived Claude Code process, which outlives the agent. Recorded lock reasons:
+# an agent the ledger shows finished (its pid still alive), one still running, one whose process
+# is gone, one whose pid now belongs to another process, and a lock that is not Claude Code's.
+sleep 300 & live=$!
+trap 'kill "$live" 2>/dev/null || true; rm -rf "$tmp"' EXIT
+started() { sed 's/^.*) //' "/proc/$1/stat" | cut -d' ' -f20; }
+bash -c 'exit 0' & dead=$!
+wait "$dead"
+stop_agent() { printf '{"ts":"2026-01-01T10:00:00Z","event":"agent_stop","agent_id":"%s","role":"implementer","outcome":"completed"}\n' "$1" >>"$p/.factory/ledger.jsonl"; }
+# locked <ticket> <branch> <file> <reason>: an implemented ticket whose branch is also on origin and whose worktree is locked
+locked() {
+  implement "$1" "$2" "$3" "content-$1"
+  git -C "$p" push -q origin "$2"
+  git -C "$p" worktree lock --reason "$4" "$p/.claude/worktrees/agent-$1"
+}
+# gone <ticket> <branch>: the worktree and both copies of the branch are gone
+gone() {
+  [ ! -e "$p/.claude/worktrees/agent-$1" ] || return 1
+  ! git -C "$p" rev-parse -q --verify "refs/heads/$2" >/dev/null || return 1
+  ! o rev-parse -q --verify "refs/heads/$2" >/dev/null 2>&1
+}
+merge_it() { "$fi_" merge --ticket "$1" --branch "$2" --worktree "$p/.claude/worktrees/agent-$1"; }
+
+locked 21 t21-fin i1.txt "claude agent agent-fin21 (pid $live start $(started "$live"))"
+stop_agent fin21
+out=$(merge_it 21 t21-fin) || fail "merge 21: $out"
+jq -e '.result == "merged" and .worktree_removed == true and .branch_deleted == true and .remote_branch_deleted == true and .worktree_lock.state == "finished"' <<<"$out" >/dev/null || fail "finished agent: $out"; ok
+gone 21 t21-fin || fail "finished agent: worktree, local and remote branch all removed"; ok
+
+locked 22 t22-run i2.txt "claude agent agent-run22 (pid $live start $(started "$live"))"
+out=$(merge_it 22 t22-run) || fail "merge 22: $out"
+jq -e '.result == "merged" and .worktree_removed == false and .branch_deleted == false and .worktree_lock.state == "running" and (.cleanup_note | contains("running"))' <<<"$out" >/dev/null || fail "running agent: $out"; ok
+[ -d "$p/.claude/worktrees/agent-22" ] && git -C "$p" rev-parse -q --verify refs/heads/t22-run >/dev/null && o rev-parse -q --verify refs/heads/t22-run >/dev/null || fail "running agent: worktree and both branches kept"; ok
+git -C "$p" worktree list --porcelain | grep -qF "locked claude agent agent-run22" || fail "running agent: lock left in place"; ok
+[ "$(git -C "$p" log -1 --format=%s origin/spec/3-parser)" = "Merge t22-run into spec/3-parser (#22)" ] || fail "running agent: the merge itself still stands"; ok
+
+locked 23 t23-gone i3.txt "claude agent agent-gone23 (pid $dead start 1)"
+out=$(merge_it 23 t23-gone) || fail "merge 23: $out"
+jq -e '.worktree_removed == true and .branch_deleted == true and .worktree_lock.state == "gone"' <<<"$out" >/dev/null || fail "gone process: $out"; ok
+gone 23 t23-gone || fail "gone process: everything removed"; ok
+
+locked 24 t24-reuse i4.txt "claude agent agent-reuse24 (pid $live start 1)"
+out=$(merge_it 24 t24-reuse) || fail "merge 24: $out"
+jq -e '.worktree_removed == true and .worktree_lock.state == "gone"' <<<"$out" >/dev/null || fail "pid reused by another process counts as gone: $out"; ok
+gone 24 t24-reuse || fail "reused pid: everything removed"; ok
+
+locked 25 t25-manual i5.txt "keep for the review"
+out=$(merge_it 25 t25-manual) || fail "merge 25: $out"
+jq -e '.worktree_removed == false and .branch_deleted == false and .worktree_lock.state == "unknown" and .worktree_lock.reason == "keep for the review"' <<<"$out" >/dev/null || fail "a lock that is not Claude Code's is never broken: $out"; ok
+
+# leftovers: what a kept worktree leaves behind, and its retry once the agent finishes
+out=$("$fi_" leftovers --json)
+jq -e 'map(.ticket) == [22, 25] and (.[0] | .branch == "t22-run" and .worktree_exists and .branch_local and .branch_remote and .lock == "running")' <<<"$out" >/dev/null || fail "leftovers: $out"; ok
+out=$("$fi_" leftovers)
+[[ "$out" == *"#22"*"t22-run"*"running"* ]] || fail "leftovers text: $out"; ok
+out=$("$fi_" cleanup) || fail "cleanup: $out"
+jq -e 'map(select(.worktree_removed == true)) == []' <<<"$out" >/dev/null || fail "cleanup leaves a running agent alone: $out"; ok
+stop_agent run22
+out=$("$fi_" cleanup --ticket 22) || fail "cleanup 22: $out"
+jq -e '. == [.[0]] and .[0].ticket == 22 and .[0].worktree_removed == true and .[0].branch_deleted == true and .[0].remote_branch_deleted == true' <<<"$out" >/dev/null || fail "cleanup after the agent finished: $out"; ok
+gone 22 t22-run || fail "retried clean-up removed everything"; ok
+"$fi_" leftovers --json | jq -e 'map(.ticket) == [25]' >/dev/null || fail "leftovers after the retry"; ok
+git -C "$p" worktree unlock "$p/.claude/worktrees/agent-25"
+"$fi_" cleanup | jq -e 'map(.ticket) == [25] and .[0].worktree_removed == true' >/dev/null || fail "cleanup once the lock is released"; ok
+[ "$("$fi_" leftovers)" = "No leftover worktrees or branches." ] || fail "nothing left over: $("$fi_" leftovers)"; ok
+kill "$live" 2>/dev/null || true
+
 # --- diverged: the local integration branch and origin both moved ---
 git clone -q -b spec/3-parser "$tmp/origin.git" "$tmp/other"
 echo other >"$tmp/other/e.txt" && git -C "$tmp/other" add e.txt && git -C "$tmp/other" commit -q -m other && git -C "$tmp/other" push -q origin spec/3-parser

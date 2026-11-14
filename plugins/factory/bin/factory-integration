@@ -15,16 +15,32 @@ Usage:
   factory-integration merge --ticket N --branch TICKET_BRANCH [--worktree PATH] [--title TEXT]
       In the ticket's spec integration worktree (from factory-state): fast-forward to origin,
       merge TICKET_BRANCH with --no-ff, push through the hooks, then remove the ticket's
-      worktree PATH and delete TICKET_BRANCH, and record the merge with factory-state.
+      worktree PATH (default: the one the ticket was assigned) and delete TICKET_BRANCH, locally
+      and on origin, and record the merge with factory-state. Claude Code locks an agent's
+      worktree ("claude agent agent-<id> (pid N start S)"): the lock is read, and when it names
+      an agent the ledger shows finished, or a process that no longer exists (or whose pid now
+      belongs to another process), the worktree is unlocked first. A lock of a running agent, or
+      one that is not Claude Code's, is never broken: worktree and branch are left, and the result
+      says so. worktree_removed (null: none to remove) and branch_deleted (local and remote both
+      gone) are always what actually happened; worktree_lock is {state: none|finished|gone|running|
+      unknown, reason}; cleanup_note says why anything was left.
       Then, with gh: after the spec's first merge, open one draft pull request from the
       integration branch to the default branch (unless one is open), naming the spec and the
       tickets merged so far, ending with the project's attribution.pr from .claude/settings*.json;
       each later merge adds its ticket and its Closes line to that body and changes nothing else.
       The pull request stays a draft. Prints {result, ..., pull_request: {number, url, created}};
       pull_request is null, with pull_request_error, when gh failed (the merge still stands).
-      Exit 0: merged. Exit 3: conflict (merge aborted, nothing pushed,
+      Exit 0: merged (even when clean-up was left). Exit 3: conflict (merge aborted, nothing pushed,
       worktree and branch kept; files listed). Exit 4: the integration branch has diverged from
       origin or the push failed (local merge undone; output included).
+  factory-integration leftovers [--ticket N] [--json]
+      Merged tickets whose worktree or branch (local or on origin) is still there, with the lock
+      state of the worktree. Prints a table, or "No leftover worktrees or branches."; --json prints
+      [{ticket, spec, branch, worktree, worktree_exists, branch_local, branch_remote, lock, lock_reason}].
+  factory-integration cleanup [--ticket N]
+      Retry the clean-up of every leftover (or of ticket N): the same rules as merge. Run it when an
+      agent finishes. Prints [{ticket, spec, branch, worktree, worktree_removed, branch_deleted,
+      remote_branch_deleted, worktree_lock, cleanup_note}].
 USAGE
 }
 
@@ -35,8 +51,8 @@ state_cmd="$root/bin/factory-state"
 
 die() { echo "factory-integration: $*" >&2; exit 2; }
 cmd=${1:-}
-case "$cmd" in -h | --help) usage; exit 0 ;; ensure | merge) shift ;; *) usage >&2; exit 2 ;; esac
-spec="" branch="" ticket="" worktree="" title=""
+case "$cmd" in -h | --help) usage; exit 0 ;; ensure | merge | leftovers | cleanup) shift ;; *) usage >&2; exit 2 ;; esac
+spec="" branch="" ticket="" worktree="" title="" json=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --spec) spec=${2:?}; shift ;;
@@ -44,6 +60,7 @@ while [ $# -gt 0 ]; do
     --ticket) ticket=${2:?}; shift ;;
     --worktree) worktree=${2:?}; shift ;;
     --title) title=${2:?}; shift ;;
+    --json) json=1 ;;
     -h | --help) usage; exit 0 ;;
     *) die "unknown argument $1" ;;
   esac
@@ -137,6 +154,120 @@ $attribution}"
   jq -n --argjson n "$n" --arg url "$url" '{number: $n, url: $url, created: false}'
 }
 
+# worktree_lock_reason PATH: the lock reason of a registered worktree (possibly empty); fails when
+# the worktree is not locked.
+worktree_lock_reason() {
+  g worktree list --porcelain | awk -v p="$(readlink -f "$1")" '
+    $1 == "worktree" { cur = substr($0, 10); next }
+    cur == p && $1 == "locked" { sub(/^locked ?/, ""); print; found = 1 }
+    END { exit !found }'
+}
+
+pid_alive() { kill -0 "$1" 2>/dev/null || [ -d "/proc/$1" ]; }
+
+# classify_lock WORKTREE: sets lock_state and lock_reason.
+#   none      not locked
+#   finished  Claude Code's lock ("claude agent agent-<id> (pid N start S)") of an agent the ledger
+#             shows stopped; the pid is Claude Code's own process and outlives the agent
+#   gone      Claude Code's lock of an agent that never reported stopping, whose process no longer
+#             exists (or whose pid, by its start time, now belongs to another process)
+#   running   Claude Code's lock of an agent whose process is alive and which has not stopped
+#   unknown   any other lock, or one this cannot read: never broken
+classify_lock() {
+  local reason agent="" pid="" start="" ledger_file="$project/.factory/ledger.jsonl" cur
+  lock_state=none lock_reason=""
+  reason=$(worktree_lock_reason "$1") || return 0
+  lock_reason=$reason lock_state=unknown
+  [[ "$reason" =~ ^claude\ agent\ (agent-)?([^\ ]+) ]] || return 0
+  agent=${BASH_REMATCH[2]}
+  if [ -f "$ledger_file" ] && jq -s -e --arg a "$agent" 'any(.[]; type == "object" and .event == "agent_stop"
+      and (.agent_id == $a or .agent_id == "agent-\($a)"))' "$ledger_file" >/dev/null 2>&1; then
+    lock_state=finished
+    return 0
+  fi
+  [[ "$reason" =~ pid\ ([0-9]+) ]] || return 0
+  pid=${BASH_REMATCH[1]}
+  [[ "$reason" =~ start\ ([0-9]+) ]] && start=${BASH_REMATCH[1]}
+  if ! pid_alive "$pid"; then
+    lock_state=gone
+  elif [ -n "$start" ] && [ -r "/proc/$pid/stat" ]; then
+    cur=$(sed 's/^.*) //' "/proc/$pid/stat" | cut -d' ' -f20)
+    if [ "$cur" = "$start" ]; then lock_state=running; else lock_state=gone; fi
+  else
+    lock_state=running
+  fi
+  return 0
+}
+
+# cleanup_ticket BRANCH WORKTREE INTEGRATION_WORKTREE: removes a merged ticket's worktree and
+# deletes its branch locally and on origin, unless its agent may still be using them. Sets
+# removed (true|false|null: no worktree there), deleted (true|false), remote_deleted (true|false|
+# null: not on origin), lock_state, lock_reason and note. Reports what happened, never what was hoped.
+cleanup_ticket() {
+  local tb=$1 twt=$2 iwt=$3 local_gone=false
+  removed=null deleted=false remote_deleted=null note="" lock_state=none lock_reason=""
+  if [ -n "$twt" ] && [ -e "$twt" ]; then
+    classify_lock "$twt"
+    case "$lock_state" in
+      running) removed=false note="the agent is still running (lock: $lock_reason); worktree and branch left in place" ;;
+      unknown) removed=false note="the worktree is locked by something that is not a finished or gone Claude Code agent (lock: $lock_reason); worktree and branch left in place" ;;
+      *)
+        if [ -n "$(git -C "$twt" status --porcelain 2>/dev/null)" ]; then
+          # not clean apart from ignored build output: someone's work may be in it
+          removed=false note="the worktree has uncommitted changes; worktree and branch left in place"
+        else
+          [ "$lock_state" = none ] || g worktree unlock "$twt" 2>/dev/null || true
+          if g worktree remove --force "$twt" 2>/dev/null; then
+            removed=true
+          else
+            removed=false note="git could not remove the worktree; worktree and branch left in place"
+          fi
+        fi ;;
+    esac
+  fi
+  if [ "$removed" != false ]; then
+    if g rev-parse -q --verify "refs/heads/$tb" >/dev/null; then
+      if ! { [ -d "$iwt" ] && git -C "$iwt" branch -q -d "$tb" 2>/dev/null; }; then
+        note="${note:+$note; }the local branch $tb was not deleted"
+      fi
+    fi
+    if g ls-remote --exit-code --heads origin "$tb" >/dev/null 2>&1; then
+      # --no-verify: nothing is pushed, and the project's pre-push check would only run for minutes
+      if g push -q --no-verify origin --delete "$tb" >/dev/null 2>&1; then
+        remote_deleted=true
+      else
+        remote_deleted=false note="${note:+$note; }the branch $tb was not deleted on origin"
+      fi
+    fi
+    g rev-parse -q --verify "refs/heads/$tb" >/dev/null || local_gone=true
+    if [ "$local_gone" = true ] && [ "$remote_deleted" != false ]; then deleted=true; fi
+  fi
+  return 0
+}
+
+# leftovers_json [TICKET]: the merged tickets whose worktree or branch is still there.
+leftovers_json() {
+  local only=${1:-} out="[]" row t sp tb twt we bl br
+  while IFS= read -r row; do
+    [ -n "$row" ] || continue
+    t=$(jq -r .ticket <<<"$row") sp=$(jq -r .spec <<<"$row")
+    tb=$(jq -r '.branch // ""' <<<"$row") twt=$(jq -r '.worktree // ""' <<<"$row")
+    [ -z "$only" ] || [ "$only" = "$t" ] || continue
+    we=false bl=false br=false lock_state=none lock_reason=""
+    if [ -n "$twt" ] && [ -e "$twt" ]; then we=true; classify_lock "$twt"; fi
+    if [ -n "$tb" ]; then
+      if g rev-parse -q --verify "refs/heads/$tb" >/dev/null; then bl=true; fi
+      if g ls-remote --exit-code --heads origin "$tb" >/dev/null 2>&1; then br=true; fi
+    fi
+    [ "$we$bl$br" != falsefalsefalse ] || continue
+    out=$(jq -c --argjson t "$t" --argjson sp "$sp" --arg tb "$tb" --arg twt "$twt" --argjson we "$we" --argjson bl "$bl" \
+      --argjson br "$br" --arg ls "$lock_state" --arg lr "$lock_reason" \
+      '. + [{ticket: $t, spec: $sp, branch: $tb, worktree: (if $twt == "" then null else $twt end), worktree_exists: $we,
+             branch_local: $bl, branch_remote: $br, lock: $ls, lock_reason: (if $lr == "" then null else $lr end)}]' <<<"$out")
+  done < <("$state_cmd" show | jq -c '.merged | to_entries | sort_by(.value.ticket)[] | .value')
+  printf '%s\n' "$out"
+}
+
 case "$cmd" in
 ensure)
   [[ "$spec" =~ ^[0-9]+$ ]] || die "ensure needs --spec <number>"
@@ -205,18 +336,9 @@ merge)
     jq -n --arg ib "$ib" --arg out "$out" '{result: "push-failed", integration_branch: $ib, output: $out}'
     exit 4
   fi
-  removed=null
-  if [ -n "$worktree" ] && [ -d "$worktree" ]; then
-    if [ -z "$(git -C "$worktree" status --porcelain 2>/dev/null)" ]; then
-      # clean apart from ignored build output, and its commits are merged: safe to force
-      g worktree remove --force "$worktree" && removed=true || removed=false
-    else
-      removed=false
-    fi
-  fi
-  deleted=false
-  if [ "$removed" != false ] && w branch -q -d "$branch" 2>/dev/null; then deleted=true; fi
-  "$state_cmd" merge --ticket "$ticket" --commit "$commit"
+  [ -n "$worktree" ] || worktree=$(jq -r --arg t "$ticket" '.assignments[$t].worktree // empty' <<<"$st")
+  cleanup_ticket "$branch" "$worktree" "$wt"
+  "$state_cmd" merge --ticket "$ticket" --commit "$commit" ${worktree:+--worktree "$worktree"}
   errf=$(mktemp "${TMPDIR:-/tmp}/factory-integration.XXXXXX")
   pr_err=""
   if ! pr=$(draft_pr "$spec" "$ib" "$def" "$ticket" "$title" 2>"$errf"); then
@@ -225,9 +347,42 @@ merge)
   fi
   rm -f "$errf"
   jq -n --arg c "$commit" --arg tb "$branch" --arg ib "$ib" --arg wt "$worktree" \
-    --argjson removed "$removed" --argjson deleted "$deleted" --argjson pr "$pr" --arg pr_err "$pr_err" \
+    --argjson removed "$removed" --argjson deleted "$deleted" --argjson rdeleted "$remote_deleted" \
+    --arg ls "$lock_state" --arg lr "$lock_reason" --arg note "$note" --argjson pr "$pr" --arg pr_err "$pr_err" \
     '{result: "merged", commit: $c, ticket_branch: $tb, integration_branch: $ib,
       worktree: (if $wt == "" then null else $wt end), worktree_removed: $removed, branch_deleted: $deleted,
+      remote_branch_deleted: $rdeleted,
+      worktree_lock: {state: $ls, reason: (if $lr == "" then null else $lr end)},
+      cleanup_note: (if $note == "" then null else $note end),
       pull_request: $pr} + (if $pr_err == "" then {} else {pull_request_error: $pr_err} end)'
+  ;;
+leftovers)
+  rows=$(leftovers_json "$ticket")
+  if [ "$json" = 1 ]; then
+    jq . <<<"$rows"
+  elif [ "$(jq length <<<"$rows")" = 0 ]; then
+    echo "No leftover worktrees or branches."
+  else
+    jq -r '(["ticket", "spec", "branch", "worktree", "local", "origin", "lock"] | @tsv),
+      (.[] | ["#\(.ticket)", "#\(.spec)", .branch, (if .worktree_exists then .worktree else "-" end),
+              (if .branch_local then "yes" else "-" end), (if .branch_remote then "yes" else "-" end),
+              (if .lock == "none" then "-" else .lock end)] | @tsv)' <<<"$rows" | column -t -s "$(printf '\t')"
+  fi
+  ;;
+cleanup)
+  res="[]"
+  for t in $(leftovers_json "$ticket" | jq -r '.[].ticket'); do
+    row=$("$state_cmd" show | jq -c --arg t "$t" '.merged[$t]')
+    sp=$(jq -r .spec <<<"$row") tb=$(jq -r '.branch // ""' <<<"$row") twt=$(jq -r '.worktree // ""' <<<"$row")
+    iwt=$("$state_cmd" show | jq -r --arg s "$sp" '.integration[$s].worktree // empty')
+    cleanup_ticket "$tb" "$twt" "$iwt"
+    res=$(jq -c --argjson t "$t" --argjson sp "$sp" --arg tb "$tb" --arg twt "$twt" --argjson removed "$removed" \
+      --argjson deleted "$deleted" --argjson rdeleted "$remote_deleted" --arg ls "$lock_state" --arg lr "$lock_reason" --arg note "$note" \
+      '. + [{ticket: $t, spec: $sp, branch: $tb, worktree: (if $twt == "" then null else $twt end),
+             worktree_removed: $removed, branch_deleted: $deleted, remote_branch_deleted: $rdeleted,
+             worktree_lock: {state: $ls, reason: (if $lr == "" then null else $lr end)},
+             cleanup_note: (if $note == "" then null else $note end)}]' <<<"$res")
+  done
+  jq . <<<"$res"
   ;;
 esac
