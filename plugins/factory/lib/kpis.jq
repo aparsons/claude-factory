@@ -47,6 +47,7 @@ def types: ["input", "output", "cache_read", "cache_creation"];
     | ([$ev[] | select(.ticket == $t and (.event == "agent_start" or .event == "agent_launch" or .event == "agent_stop")) | .ts | ts2s] | min) as $first
     | ([$merged[] | select(.ticket == $t) | .s] | min) as $m
     | select($first != null and $m >= $first) | $m - $first]) as $leads
+| ([$ev[] | select(.event == "merge" and (.duration_s | type) == "number")]) as $timed_merges
 | ([$ev[] | select(.event == "gate" and .ticket != null)] | sort_by(.ts) | group_by(.ticket)) as $gates
 | ([$ev[] | select(.event == "escalation" and .ticket != null)]) as $escs
 | ([$gates[] | .[0].ticket] + [$escs[] | .ticket] | unique) as $rework_tickets
@@ -77,6 +78,9 @@ def types: ["input", "output", "cache_read", "cache_creation"];
   flow: {
     tickets_merged_per_day: (if $days == null or $merges == null then null else rate($merged_tickets | length; $days) | round1 end),
     lead_time_median_s: ($leads | median),
+    merge_time_median_s: ([$timed_merges[] | .duration_s] | median),
+    merge_time_total_s: ([$timed_merges[] | .duration_s] | sumnn),
+    merge_wait_total_s: (if ($timed_merges | length) == 0 then null else ([$timed_merges[] | .waited_s] | sumnn // 0) end),
     frontier_size: null,
     active_agents: (if $recorded then [$started[] | select(. as $a | $stopped | index($a) | not)] | length else null end),
     stalls: (if $recorded then [$ev[] | select(.event == "stall")] | length else null end)},

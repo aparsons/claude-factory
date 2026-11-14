@@ -17,10 +17,14 @@ Usage: factory-state <command> [options]
                                fill in what is known after the agent starts
   unassign --ticket N [--reason TEXT]
                                drop an assignment without merging; ledger: unassign {ticket, spec, reason}
-  merge --ticket N --commit SHA [--worktree P]
+  merge --ticket N --commit SHA [--worktree P] [--duration-s S] [--waited-s S]
                                the ticket is merged into its integration branch: moves the assignment
                                to merged, keeping its worktree path (P, else the assignment's) so a
-                               clean-up left undone can be retried; ledger: merge {ticket, spec, branch, commit}
+                               clean-up left undone can be retried; ledger: merge {ticket, spec, branch,
+                               commit, result: merged, duration_s, waited_s}
+  merge --ticket N --result conflict|diverged|push-failed [--duration-s S] [--waited-s S]
+                               a merge that did not merge: ledger only (merge {..., result, duration_s,
+                               waited_s}); the assignment stays
   gate --ticket N --result pass|fail [--tests-added K]
                                ledger only: gate {ticket, spec, result, tests_added}
   integration --spec S --branch B [--worktree P] [--status active|complete]
@@ -99,7 +103,7 @@ cmd=${1:-}
 case "$cmd" in -h | --help) usage; exit 0 ;; esac
 shift
 ticket="" spec="" role="" model="" effort="" branch="" worktree="" agent="" commit="" result=""
-tests_added="" reason="" status="" usd="" json=0
+tests_added="" reason="" status="" usd="" duration="" waited="" json=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --ticket) ticket=${2:?}; shift ;;
@@ -113,6 +117,8 @@ while [ $# -gt 0 ]; do
     --commit) commit=${2:?}; shift ;;
     --result) result=${2:?}; shift ;;
     --tests-added) tests_added=${2:?}; shift ;;
+    --duration-s) duration=${2:?}; shift ;;
+    --waited-s) waited=${2:?}; shift ;;
     --reason) reason=${2:?}; shift ;;
     --status) status=${2:?}; shift ;;
     --usd) usd=${2:?}; shift ;;
@@ -172,14 +178,26 @@ unassign)
   ;;
 merge)
   need_num --ticket "$ticket"
-  [ -n "$commit" ] || die "merge needs --commit"
+  [ -z "$duration" ] || need_num --duration-s "$duration"
+  [ -z "$waited" ] || need_num --waited-s "$waited"
+  case "${result:-merged}" in merged | conflict | diverged | push-failed) ;; *) die "--result is merged, conflict, diverged or push-failed" ;; esac
   a=$(current | jq -c --arg t "$ticket" '.assignments[$t] // empty')
   [ -n "$a" ] || die "ticket #$ticket has no assignment"
+  if [ "${result:-merged}" != merged ]; then
+    # the merge did not happen: the record is the ledger event only
+    event '{event: "merge", ticket: $a.ticket, spec: $a.spec, branch: $a.branch, commit: null, result: $r,
+        duration_s: (if $d == "" then null else ($d | tonumber) end), waited_s: (if $w == "" then null else ($w | tonumber) end)}' \
+      --argjson a "$a" --arg r "$result" --arg d "$duration" --arg w "$waited"
+    exit 0
+  fi
+  [ -n "$commit" ] || die "merge needs --commit"
   mutate '.merged[$t] = {ticket: $a.ticket, spec: $a.spec, branch: $a.branch}
         + (if ($wt != "" or $a.worktree != null) then {worktree: (if $wt != "" then $wt else $a.worktree end)} else {} end)
         + {commit: $c, merged_at: $now}
       | del(.assignments[$t])' --arg t "$ticket" --argjson a "$a" --arg c "$commit" --arg wt "$worktree"
-  event '{event: "merge", ticket: $a.ticket, spec: $a.spec, branch: $a.branch, commit: $c}' --argjson a "$a" --arg c "$commit"
+  event '{event: "merge", ticket: $a.ticket, spec: $a.spec, branch: $a.branch, commit: $c, result: "merged",
+      duration_s: (if $d == "" then null else ($d | tonumber) end), waited_s: (if $w == "" then null else ($w | tonumber) end)}' \
+    --argjson a "$a" --arg c "$commit" --arg d "$duration" --arg w "$waited"
   ;;
 gate)
   need_num --ticket "$ticket"

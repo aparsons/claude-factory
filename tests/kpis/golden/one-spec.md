@@ -8,6 +8,9 @@ Ledger: 15 events, 2026-01-01T10:00:00Z to 2026-01-01T12:05:00Z.
 | --- | --- |
 | Tickets merged per day | 2 |
 | Lead time (median) | 57m 30s |
+| Merge time (median) | n/a |
+| Merge time (total) | n/a |
+| Merge time spent queued (total) | n/a |
 | Frontier size | n/a |
 | Active agents | 0 |
 | Stalls | 0 |

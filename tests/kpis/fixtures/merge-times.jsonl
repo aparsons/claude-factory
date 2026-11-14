@@ -1,0 +1,4 @@
+{"ts":"2026-04-02T09:00:00Z","event":"merge","ticket":7,"spec":3,"branch":"t7-a","commit":"aaa","session_id":null}
+{"ts":"2026-04-02T09:10:00Z","event":"merge","ticket":8,"spec":3,"branch":"t8-b","commit":null,"result":"conflict","duration_s":90,"waited_s":null,"session_id":null}
+{"ts":"2026-04-02T09:20:00Z","event":"merge","ticket":8,"spec":3,"branch":"t8-b","commit":"bbb","result":"merged","duration_s":30,"waited_s":null,"session_id":null}
+{"ts":"2026-04-02T09:30:00Z","event":"merge","ticket":9,"spec":3,"branch":"t9-c","commit":"ccc","result":"merged","duration_s":600,"waited_s":540,"session_id":null}

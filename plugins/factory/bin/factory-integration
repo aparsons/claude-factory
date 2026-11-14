@@ -34,6 +34,9 @@ Usage:
       .factory/locks/ (first come, first served; a lock whose holder no longer exists is taken
       over, said on stderr) and releases it on every exit path. Merges into different branches
       never wait for each other. A merge that waited adds waited_seconds to its result.
+      Every merge, merged or not, appends a `merge` ledger event with its result and its duration
+      (queueing included), so merge time is a KPI. The manager runs this command itself, in the
+      background, and is woken when it ends: no agent is started to wait for it.
       Exit 0: merged (even when clean-up was left). Exit 3: conflict (merge aborted, nothing pushed,
       worktree and branch kept; files listed). Exit 4: the integration branch has diverged from
       origin or the push failed (local merge undone; output included).
@@ -322,6 +325,20 @@ lock_acquire() { # lock_acquire <integration branch> <ticket>
   done
   if [ -n "$queued" ]; then waited=$(( $(date +%s) - began )); fi
 }
+# merge_times: --duration-s (the merge's wall time, queueing included) and --waited-s (when it queued),
+# the arguments factory-state records on the merge event.
+merge_began=""
+merge_times() {
+  printf '%s\n' --duration-s "$(( $(date +%s) - merge_began ))"
+  if [ -n "$waited" ]; then printf '%s\n' --waited-s "$waited"; fi
+}
+# record_merge_failure <result>: the merge event of a merge that did not merge (a failed merge is
+# still merge time).
+record_merge_failure() {
+  local times
+  mapfile -t times < <(merge_times)
+  "$state_cmd" merge --ticket "$ticket" --result "$1" "${times[@]}"
+}
 # result: reads the result JSON on stdin; adds waited_seconds when this merge waited its turn.
 result() {
   jq --argjson w "${waited:-null}" 'if $w == null then . else . + {waited_seconds: $w} end'
@@ -371,6 +388,7 @@ merge)
   [ -n "$ib" ] && [ -d "$wt" ] || die "spec #$spec has no integration worktree; run factory-integration ensure first"
   def=$(default_branch)
   [ "$ib" != "$def" ] || die "refusing to merge into the default branch"
+  merge_began=$(date +%s)
   lock_acquire "$ib" "$ticket"
   w() { git -C "$wt" "$@"; }
   [ "$(w symbolic-ref -q --short HEAD)" = "$ib" ] || die "$wt is not on $ib"
@@ -378,6 +396,7 @@ merge)
   g rev-parse -q --verify "refs/heads/$branch" >/dev/null || die "no local branch $branch"
   w fetch -q origin
   if ! w merge -q --ff-only "origin/$ib" >/dev/null 2>&1; then
+    record_merge_failure diverged
     jq -n --arg b "$ib" '{result: "diverged", detail: "the local \($b) has commits origin does not, and origin has commits it does not; nothing merged"}' | result
     exit 4
   fi
@@ -386,6 +405,7 @@ merge)
   if ! w merge -q --no-ff --no-edit -m "$msg" "$branch" >/dev/null 2>&1; then
     files=$(w diff --name-only --diff-filter=U | jq -R -s -c 'split("\n") | map(select(length > 0))')
     w merge --abort >/dev/null 2>&1 || w reset -q --hard "$before"
+    record_merge_failure conflict
     jq -n --arg tb "$branch" --arg ib "$ib" --argjson files "$files" \
       '{result: "conflict", ticket_branch: $tb, integration_branch: $ib, files: $files}' | result
     exit 3
@@ -393,12 +413,14 @@ merge)
   commit=$(w rev-parse HEAD)
   if ! out=$(w push origin "$ib" 2>&1); then
     w reset -q --hard "$before"
+    record_merge_failure push-failed
     jq -n --arg ib "$ib" --arg out "$out" '{result: "push-failed", integration_branch: $ib, output: $out}' | result
     exit 4
   fi
   [ -n "$worktree" ] || worktree=$(jq -r --arg t "$ticket" '.assignments[$t].worktree // empty' <<<"$st")
   cleanup_ticket "$branch" "$worktree" "$wt"
-  "$state_cmd" merge --ticket "$ticket" --commit "$commit" ${worktree:+--worktree "$worktree"}
+  mapfile -t times < <(merge_times)
+  "$state_cmd" merge --ticket "$ticket" --commit "$commit" ${worktree:+--worktree "$worktree"} "${times[@]}"
   errf=$(mktemp "${TMPDIR:-/tmp}/factory-integration.XXXXXX")
   pr_err=""
   if ! pr=$(draft_pr "$spec" "$ib" "$def" "$ticket" "$title" 2>"$errf"); then

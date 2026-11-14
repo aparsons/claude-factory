@@ -7,6 +7,9 @@
   "flow": {
     "tickets_merged_per_day": null,
     "lead_time_median_s": null,
+    "merge_time_median_s": null,
+    "merge_time_total_s": null,
+    "merge_wait_total_s": null,
     "frontier_size": null,
     "active_agents": null,
     "stalls": null

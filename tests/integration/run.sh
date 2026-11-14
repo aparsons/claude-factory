@@ -67,6 +67,7 @@ jq -e '.result == "merged" and .worktree_removed == true and .branch_deleted == 
 ! git -C "$p" rev-parse -q --verify refs/heads/t12-parse >/dev/null || fail "ticket branch deleted"; ok
 "$st" show | jq -e '(.assignments | has("12") | not) and .merged["12"].commit != null' >/dev/null || fail "state merged"; ok
 tail -n 1 "$p/.factory/ledger.jsonl" | jq -e '.event == "merge" and .ticket == 12 and .spec == 3' >/dev/null || fail "merge event"; ok
+tail -n 1 "$p/.factory/ledger.jsonl" | jq -e '.result == "merged" and .commit != null and (.duration_s | type == "number") and .duration_s >= 0 and .waited_s == null' >/dev/null || fail "merge event records the result and duration: $(tail -n 1 "$p/.factory/ledger.jsonl")"; ok
 [ "$(git -C "$p" symbolic-ref --short HEAD)" = main ] && [ "$(git -C "$p" rev-parse main)" = "$(o rev-parse main)" ] || fail "main untouched"; ok
 
 # --- the first merge opens the spec's draft pull request ---
@@ -96,6 +97,7 @@ prs -e '.[0].isDraft' >/dev/null || fail "still a draft"; ok
 before=$(o rev-parse spec/3-parser)
 code=0; out=$("$fi_" merge --ticket 14 --branch t14-b --worktree "$p/.claude/worktrees/agent-14") || code=$?
 [ "$code" = 3 ] && jq -e '.result == "conflict" and .files == ["c.txt"]' <<<"$out" >/dev/null || fail "conflict ($code): $out"; ok
+tail -n 1 "$p/.factory/ledger.jsonl" | jq -e '.event == "merge" and .ticket == 14 and .result == "conflict" and .commit == null and (.duration_s | type == "number")' >/dev/null || fail "conflict recorded as a merge event: $(tail -n 1 "$p/.factory/ledger.jsonl")"; ok
 [ "$(o rev-parse spec/3-parser)" = "$before" ] || fail "nothing pushed on conflict"; ok
 [ -z "$(git -C "$wt" status --porcelain --untracked-files=no)" ] && [ "$(git -C "$wt" rev-parse HEAD)" = "$before" ] || fail "integration worktree left clean"; ok
 [ -d "$p/.claude/worktrees/agent-14" ] && git -C "$p" rev-parse -q --verify refs/heads/t14-b >/dev/null || fail "worktree and branch kept on conflict"; ok
@@ -109,6 +111,7 @@ printf '#!/bin/sh\necho "check failed: test x" >&2\nexit 1\n' >"$p/.git/hooks/pr
 chmod +x "$p/.git/hooks/pre-push"
 code=0; out=$("$fi_" merge --ticket 15 --branch t15-c --worktree "$p/.claude/worktrees/agent-15") || code=$?
 [ "$code" = 4 ] && jq -e '.result == "push-failed" and (.output | contains("check failed: test x"))' <<<"$out" >/dev/null || fail "push failure ($code): $out"; ok
+tail -n 1 "$p/.factory/ledger.jsonl" | jq -e '.event == "merge" and .ticket == 15 and .result == "push-failed" and (.duration_s | type == "number")' >/dev/null || fail "push failure recorded as a merge event: $(tail -n 1 "$p/.factory/ledger.jsonl")"; ok
 [ "$(git -C "$wt" rev-parse HEAD)" = "$(o rev-parse spec/3-parser)" ] || fail "local merge undone after the push failed"; ok
 "$st" show | jq -e '.assignments | has("15")' >/dev/null || fail "assignment kept after the push failed"; ok
 rm "$p/.git/hooks/pre-push"
@@ -250,6 +253,7 @@ log=$(o log --first-parent -n 3 --format=%s spec/3-parser | tr '\n' '|')
 jq -e 'has("waited_seconds") | not' "$tmp/m16.out" >/dev/null || fail "the first merge did not wait: $(cat "$tmp/m16.out")"; ok
 jq -e "has(\"waited_seconds\")" "$tmp/m17.out" >/dev/null || fail "a merge that waited reports it: $(cat "$tmp/m17.out")"; ok
 jq -e '.waited_seconds >= 1' "$tmp/m18.out" >/dev/null || fail "the last merge waited for both: $(cat "$tmp/m18.out")"; ok
+jq -s -e '[.[] | select(.event == "merge" and .ticket == 18)] | length == 1 and .[0].result == "merged" and .[0].waited_s >= 1 and .[0].duration_s >= .[0].waited_s' "$p/.factory/ledger.jsonl" >/dev/null || fail "the queued merge's event carries its wait and a duration that includes it"; ok
 [ "$(queued)" = 0 ] || fail "locks released on exit"; ok
 
 # --- a stale lock: its holder is gone, the next merge takes over and says so ---
@@ -294,6 +298,7 @@ echo local >"$wt/f.txt" && git -C "$wt" add f.txt && git -C "$wt" commit -q -m l
 implement 17 t17-e h.txt seventeen
 code=0; out=$("$fi_" merge --ticket 17 --branch t17-e --worktree "$p/.claude/worktrees/agent-17") || code=$?
 [ "$code" = 4 ] && jq -e '.result == "diverged"' <<<"$out" >/dev/null || fail "diverged ($code): $out"; ok
+tail -n 1 "$p/.factory/ledger.jsonl" | jq -e '.event == "merge" and .ticket == 17 and .result == "diverged" and (.duration_s | type == "number")' >/dev/null || fail "divergence recorded as a merge event: $(tail -n 1 "$p/.factory/ledger.jsonl")"; ok
 
 # --- refusals ---
 if "$fi_" merge --ticket 99 --branch t99-x 2>/dev/null; then fail "merge of an unassigned ticket"; fi; ok
