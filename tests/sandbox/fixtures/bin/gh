@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # A fake gh for the sandbox suite: no network, state in $FAKE_GH_DIR. It records every call in
 # calls.log, keeps issues as files, and returns canned output for `issue view` and `pr list`
-# from issue-view.json and pr-list.json when the test has written them.
+# from issue-view-<n>.json (else issue-view.json) and pr-list.json when the test has written them.
 set -euo pipefail
 d=${FAKE_GH_DIR:?FAKE_GH_DIR is not set}
 mkdir -p "$d/issues" "$d/remote"
@@ -63,7 +63,11 @@ case "${1:-} ${2:-}" in
         subIssuesSummary: {total: ([$all[] | select(.parent == $i.number)] | length), completed: 0, percentCompleted: 0}})' \
       "$d"/issues/*.json
     ;;
-  "issue view") cat "$d/issue-view.json" ;;
+  "issue view")
+    f="$d/issue-view-${3:-}.json"
+    [ -f "$f" ] || f="$d/issue-view.json"
+    cat "$f"
+    ;;
   "pr list") cat "$d/pr-list.json" ;;
   *) echo "fake gh: unexpected call: $*" >&2; exit 1 ;;
 esac
