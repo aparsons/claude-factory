@@ -59,7 +59,7 @@ echo new >"$p/src/b.txt"
 git -C "$p" add .
 git -C "$p" commit -q -m ticket
 export CLAUDE_PROJECT_DIR="$p"
-plan() { "$tool" plan --ticket 21 --worktree "$p" --base spec/9-the-thing "$@"; }
+plan() { "$tool" plan --ticket 21 --worktree "$p" --base spec/9-the-thing; }
 
 # --- enabled by default; the reviewer gets the ADRs, the changed files and the diff command ---
 out=$(plan)
