@@ -1,0 +1,3 @@
+{"ts":"2026-04-01T09:00:00Z","event":"gate","ticket":9,"result":"pass","tests_added":3}
+{"ts":"2026-04-01T09:20:00Z","event":"gate","ticket":9,"result":"fail"}
+{"ts":"2026-04-01T09:50:00Z","event":"gate","ticket":9,"result":"pass","tests_added":1}

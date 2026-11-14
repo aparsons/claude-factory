@@ -24,6 +24,13 @@ Ledger: 15 events, 2026-01-01T10:00:00Z to 2026-01-01T12:05:00Z.
 | Tests added | 7 |
 | Review findings per ticket | 2 |
 
+### Rework per ticket
+
+| Ticket | Failed gates | Review send-backs | Escalations | Total |
+| --- | --- | --- | --- | --- |
+| #3 | 0 | 0 | 0 | 0 |
+| #4 | 1 | 0 | 0 | 1 |
+
 ## Cost
 
 | KPI | Value |

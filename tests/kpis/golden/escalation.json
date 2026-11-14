@@ -13,6 +13,15 @@
   },
   "quality": {
     "first_try_gate_pass_rate": 0,
+    "rework_by_ticket": [
+      {
+        "ticket": 5,
+        "failed_gates": 2,
+        "review_send_backs": 0,
+        "escalations": 1,
+        "total": 3
+      }
+    ],
     "rework_runs": 2,
     "escalations": 1,
     "ci_pass_rate": null,
