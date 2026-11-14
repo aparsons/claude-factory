@@ -2,7 +2,7 @@
 
 ## 1. Prerequisites
 
-Run `factory-prereqs`. If it exits non-zero, show its list and stop: the factory does not run half-configured. Otherwise keep its check command for the briefs, and run `factory-state running on`.
+Run `factory-prereqs`. If it exits non-zero, show its list and stop: the factory does not run half-configured. Otherwise keep its check command for the briefs, and run `factory-state running on`. Then start the rhythm in `wake.md`: run `factory-rhythm next` after step 4 and schedule the heartbeat it names.
 
 ## 2. Frontier
 
@@ -70,4 +70,4 @@ After every merge, recompute the frontier (`factory-frontier --json`) and go bac
 
 When a spec's status is `complete`: run `factory-state integration --spec <s> --branch <branch> --status complete` and say "Spec #<s>: all tickets merged into <branch>." (for a `standalone` entry: "Ticket #<s>: merged into <branch>."). Start nothing more for it; review and its draft pull request come with ticket #9. A standalone ticket gets its own draft pull request from `ticket/<n>-<slug>` to the default branch, closing that one issue; merging it is an outward step.
 
-When nothing is ready and nothing is running, go idle: say in a few lines what waits on the user (specs needing `/to-tickets`, blocked specs and why, failures left for them) and stop working until they reply.
+When nothing is ready and nothing is running, go idle as in `wake.md` (`factory-rhythm next` says `idle`): say in a few lines what waits on the user (`waiting_on_user`: specs needing `/to-tickets`, blocked specs and why, failures left for them), schedule no heartbeat, and stop working until they reply.

@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016 # jq programs are single-quoted on purpose
+# factory-rhythm: what the factory manager does when it wakes: the one-line event notes (and
+# whether one needs a push notification), the next heartbeat, whether the digest is due, whether
+# the queue is empty, and what waits on the user. Deterministic: the manager does not estimate.
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: factory-rhythm <command> [options]
+
+  note <kind> [--ticket N] [--spec S] --text TEXT [--needs-user]
+        record one factory event note in the ledger and print {kind, line, notify, ticket}.
+        kinds: merged, stalled, escalated (need --ticket N), ci-red, budget, question, budget-stop.
+        line: the one-line note to show ("#11 merged: <text>", "CI red: <text>", "Budget: <text>",
+        "Needs you: <text>", "Budget stop: <text>"). notify: true when the manager needs the
+        user (a question, a budget stop, or any note given --needs-user, such as a stall it
+        cannot fix): only then send a push notification.
+  digested [--path FILE]
+        record that a digest was written (resets the report interval)
+  next [--frontier FILE]
+        what to do on waking, as JSON: running, active (assignments), ready (frontier tickets),
+        idle (running, and nothing active or ready), heartbeat_seconds (the next wake-up, between
+        the heartbeat range, shortened to land on the digest; null when not running or idle),
+        digest_due, digest_in_seconds, digest_interval_min, last_digest, waiting_on_user (specs
+        needing /to-tickets, blocked specs, tickets stopped for the user, a red default branch),
+        budget (plan usage windows past their thresholds, with the action).
+        --frontier FILE reads a recorded `factory-frontier --json` (tests); otherwise it runs it.
+
+Settings (.factory/settings.json): report_interval_min (60), heartbeat_minutes ([20, 30]),
+budget_five_hour_pct (80), budget_seven_day_pct (85). Reads .factory/state.json, ledger.jsonl and
+usage.json. FACTORY_NOW overrides the time (tests).
+USAGE
+}
+
+root=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+# shellcheck disable=SC1091 # lib/common.sh, checked on its own
+. "$root/lib/common.sh"
+
+die() { echo "factory-rhythm: $*" >&2; exit 2; }
+
+project=$(factory_project)
+dir="$project/.factory"
+ledger="$dir/ledger.jsonl"
+
+cmd=${1:-}
+[ -n "$cmd" ] || { usage >&2; exit 2; }
+case "$cmd" in -h | --help) usage; exit 0 ;; esac
+shift
+
+kind="" ticket="" spec="" text="" needs_user=0 path="" frontier_file=""
+if [ "$cmd" = note ]; then
+  kind=${1:-}
+  [ -n "$kind" ] || die "note needs a kind"
+  shift
+fi
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --ticket) ticket=${2:?}; shift ;;
+    --spec) spec=${2:?}; shift ;;
+    --text) text=${2:?}; shift ;;
+    --needs-user) needs_user=1 ;;
+    --path) path=${2:?}; shift ;;
+    --frontier) frontier_file=${2:?}; shift ;;
+    -h | --help) usage; exit 0 ;;
+    *) die "unknown argument $1" ;;
+  esac
+  shift
+done
+
+num_re='^[0-9]+$'
+now=$(factory_now)
+
+append() { # append <jq object expression> [jq args...]: one ledger line
+  local expr=$1; shift
+  [ -d "$dir" ] || { mkdir -p "$dir"; factory_exclude "$project" /.factory/; }
+  jq -nc --arg ts "$now" --arg sid "${CLAUDE_SESSION_ID:-}" "$@" \
+    '{ts: $ts} + ('"$expr"') + {session_id: (if $sid == "" then null else $sid end)}' >>"$ledger"
+}
+
+case "$cmd" in
+note)
+  case "$kind" in
+    merged | stalled | escalated) [ -n "$ticket" ] || die "note $kind needs --ticket" ;;
+    ci-red | budget | question | budget-stop) ;;
+    *) die "unknown note kind $kind (merged, stalled, escalated, ci-red, budget, question, budget-stop)" ;;
+  esac
+  [ -z "$ticket" ] || [[ "$ticket" =~ $num_re ]] || die "--ticket needs a number, got '$ticket'"
+  [ -z "$spec" ] || [[ "$spec" =~ $num_re ]] || die "--spec needs a number, got '$spec'"
+  [ -n "$text" ] || die "note needs --text"
+  case "$kind" in
+    merged | stalled | escalated) prefix="#$ticket $kind" ;;
+    ci-red) prefix="CI red" ;;
+    budget) prefix="Budget" ;;
+    question) prefix="Needs you" ;;
+    budget-stop) prefix="Budget stop" ;;
+  esac
+  line="$prefix: $text"
+  notify=false
+  case "$kind" in question | budget-stop) notify=true ;; esac
+  [ "$needs_user" = 0 ] || notify=true
+  append '{event: "note", kind: $k, ticket: (if $t == "" then null else ($t | tonumber) end),
+      spec: (if $s == "" then null else ($s | tonumber) end), line: $l, notify: $n}' \
+    --arg k "$kind" --arg t "$ticket" --arg s "$spec" --arg l "$line" --argjson n "$notify"
+  jq -nc --arg k "$kind" --arg l "$line" --argjson n "$notify" --arg t "$ticket" \
+    '{kind: $k, line: $l, notify: $n, ticket: (if $t == "" then null else ($t | tonumber) end)}'
+  ;;
+digested)
+  append '{event: "digest", path: (if $p == "" then null else $p end)}' --arg p "$path"
+  ;;
+next)
+  frontier='null'
+  if [ -n "$frontier_file" ]; then
+    frontier=$(jq -c . "$frontier_file") || die "cannot read $frontier_file"
+  else
+    frontier=$("$root/bin/factory-frontier" --json 2>/dev/null | jq -c .) || frontier='null'
+    [ -n "$frontier" ] || frontier='null'
+  fi
+  state='{}'
+  [ ! -f "$dir/state.json" ] || state=$(jq -c . "$dir/state.json" 2>/dev/null || echo '{}')
+  usage_json='null'
+  [ ! -f "$dir/usage.json" ] || usage_json=$(jq -c . "$dir/usage.json" 2>/dev/null || echo null)
+  events='[]'
+  [ ! -f "$ledger" ] || events=$(jq -R -s -c 'split("\n") | map(fromjson? // empty)' "$ledger")
+  jq -n \
+    --arg now "$now" --argjson frontier "$frontier" --argjson state "$state" \
+    --argjson usage "$usage_json" --argjson ev "$events" \
+    --argjson settings "$(factory_settings "$project")" '
+    def ts2s: sub("Z$"; "Z") | fromdateiso8601;
+    def clamp($lo; $hi): if . < $lo then $lo elif . > $hi then $hi else . end;
+    ($now | ts2s) as $t
+    | ($settings.report_interval_min // 60) as $interval
+    | ($settings.heartbeat_minutes // [20, 30]) as $hb
+    | ($settings.budget_five_hour_pct // 80) as $b5
+    | ($settings.budget_seven_day_pct // 85) as $b7
+    | (($state.running // false) == true) as $running
+    | (($state.assignments // {}) | length) as $active
+    | (if $frontier == null then null else ($frontier.ready // [] | length) end) as $ready
+    | ([$ev[] | select(.event == "digest") | .ts] | sort | last) as $last
+    | ([$ev[] | select(.event == "assign") | .ts] | sort | first) as $first
+    | ($last // $first) as $ref
+    | (if $ref == null then null else (($ref | ts2s) + $interval * 60 - $t) end) as $in
+    | ($running and ($active > 0 or ($ready // 0) > 0)) as $working
+    | ($running and $active == 0 and $ready == 0) as $idle
+    | {
+      running: $running,
+      active: $active,
+      ready: $ready,
+      idle: $idle,
+      heartbeat_seconds: (if ($running | not) or $idle then null
+                          elif $in == null then $hb[1] * 60
+                          else ($in | clamp($hb[0] * 60; $hb[1] * 60)) end),
+      digest_due: ($working and $in != null and $in <= 0),
+      digest_in_seconds: $in,
+      digest_interval_min: $interval,
+      last_digest: $last,
+      waiting_on_user: (
+        [($frontier.alerts // [])[] | select(.kind == "default-branch-red")
+          | {kind: "default-branch-red", branch, failing}]
+        + [($frontier.needs_tickets // [])[] | {kind: "needs-tickets", spec: .number, title}]
+        + [($frontier.specs // [])[] | select(.status == "blocked")
+          | {kind: "blocked-spec", spec: .number, title, not_for_agents: (.not_for_agents // [])}]
+        + ([$ev[] | select(.ticket != null and (.event == "assign" or .event == "unassign" or .event == "merge"))]
+          | group_by(.ticket) | map(sort_by(.ts) | last)
+          | map(select(.event == "unassign" and (.reason // "") != "stopped")
+            | {kind: "stopped", ticket, spec, reason})))
+      ,
+      budget: ([
+        ($usage.rate_limits.five_hour // null) as $w | select($w != null)
+          | select(($w.resets_at // 0) > $t and ($w.used_percentage // 0) >= $b5)
+          | {window: "five_hour", used_pct: $w.used_percentage, threshold: $b5, resets_at: $w.resets_at, action: "no-new-builders"},
+        ($usage.rate_limits.seven_day // null) as $w | select($w != null)
+          | select(($w.resets_at // 0) > $t and ($w.used_percentage // 0) >= $b7)
+          | {window: "seven_day", used_pct: $w.used_percentage, threshold: $b7, resets_at: $w.resets_at, action: "ask"}
+      ])
+    }'
+  ;;
+*) die "unknown command $cmd (see --help)" ;;
+esac
