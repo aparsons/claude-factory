@@ -34,6 +34,8 @@ Usage: factory-state <command> [options]
                                effort_override, previous: {role, model, effort, agent, worktree}}.
                                Exit 3, changing nothing, when the ticket has no assignment, was already
                                escalated, or has no tier above.
+  review --spec S --findings K [--role R]
+                               ledger only: review {spec, role, findings}; the spec report counts them
   integration --spec S --branch B [--worktree P] [--status active|complete]
                                record a spec's integration branch
   estimate --spec S --usd X    record a spec's cost estimate (the first one is kept as first)
@@ -119,7 +121,7 @@ cmd=${1:-}
 case "$cmd" in -h | --help) usage; exit 0 ;; esac
 shift
 ticket="" spec="" role="" model="" effort="" branch="" worktree="" agent="" commit="" result=""
-tests_added="" reason="" status="" usd="" json=0
+tests_added="" reason="" status="" usd="" findings="" json=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --ticket) ticket=${2:?}; shift ;;
@@ -136,6 +138,7 @@ while [ $# -gt 0 ]; do
     --reason) reason=${2:?}; shift ;;
     --status) status=${2:?}; shift ;;
     --usd) usd=${2:?}; shift ;;
+    --findings) findings=${2:?}; shift ;;
     --json) json=1 ;;
     on | off) [ "$cmd" = running ] || die "unexpected argument $1"; status=$1 ;;
     -h | --help) usage; exit 0 ;;
@@ -257,6 +260,11 @@ escalate)
   jq -nc --argjson a "$a" --argjson to "$to" --arg r "$reason" --arg wt "$wt" \
     '{ticket: $a.ticket, spec: $a.spec, branch: $a.branch, reason: $r} + $to
      + {previous: (($a | {role, model, effort, agent}) + {worktree: (if $wt == "" then null else $wt end)})}'
+  ;;
+review)
+  need_num --spec "$spec"; need_num --findings "$findings"
+  event '{event: "review", ticket: null, spec: ($s | tonumber), role: (if $r == "" then null else $r end), findings: ($k | tonumber)}' \
+    --arg s "$spec" --arg r "$role" --arg k "$findings"
   ;;
 integration)
   need_num --spec "$spec"

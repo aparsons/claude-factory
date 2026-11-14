@@ -68,6 +68,6 @@ Read the JSON it relays from `factory-integration merge`:
 
 After every merge, recompute the frontier (`factory-frontier --json`) and go back to step 3 for newly ready tickets.
 
-When a spec's status is `complete`: run `factory-state integration --spec <s> --branch <branch> --status complete` and say "Spec #<s>: all tickets merged into <branch>." (for a `standalone` entry: "Ticket #<s>: merged into <branch>."). Start nothing more for it; review and its draft pull request come with ticket #9. A standalone ticket gets its own draft pull request from `ticket/<n>-<slug>` to the default branch, closing that one issue; merging it is an outward step.
+When a spec's status is `complete`: run `factory-state integration --spec <s> --branch <branch> --status complete` and say "Spec #<s>: all tickets merged into <branch>." (for a `standalone` entry: "Ticket #<s>: merged into <branch>."). Start no more tickets for it; follow `${CLAUDE_PLUGIN_ROOT}/skills/factory/finish.md` (review, one fixer, spec report, draft pull request, then ask). A standalone ticket goes through the same steps: its draft pull request is from `ticket/<n>-<slug>` to the default branch and closes that one issue. Marking a pull request ready and merging it are outward steps.
 
 When nothing is ready and nothing is running, go idle: say in a few lines what waits on the user (specs needing `/to-tickets`, blocked specs and why, failures left for them) and stop working until they reply.
