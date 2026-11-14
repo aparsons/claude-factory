@@ -1,0 +1,9 @@
+check	Run scripts/check.sh	2026-01-01T10:05:00.0000000Z == tests/frontier/run.sh
+check	Run scripts/check.sh	2026-01-01T10:05:01.0000000Z ok: tests/frontier/run.sh
+check	Run scripts/check.sh	2026-01-01T10:05:01.0000000Z == tests/state/run.sh
+check	Run scripts/check.sh	2026-01-01T10:05:02.0000000Z FAIL: merge moves the assignment: {"version":1}
+check	Run scripts/check.sh	2026-01-01T10:05:02.0000000Z FAILED: tests/state/run.sh
+check	Run scripts/check.sh	2026-01-01T10:05:03.0000000Z
+check	Run scripts/check.sh	2026-01-01T10:05:03.0000000Z check failed:
+check	Run scripts/check.sh	2026-01-01T10:05:03.0000000Z   - tests/state/run.sh
+check	Run scripts/check.sh	2026-01-01T10:05:03.0000000Z ##[error]Process completed with exit code 1.

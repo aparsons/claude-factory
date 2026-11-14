@@ -1,0 +1,2 @@
+lint	shellcheck	2026-01-01T10:02:00.0000000Z In bin/x line 3:
+lint	shellcheck	2026-01-01T10:02:00.0000000Z SC2086 (info): Double quote to prevent globbing

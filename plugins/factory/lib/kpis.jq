@@ -89,6 +89,10 @@ def types: ["input", "output", "cache_read", "cache_creation"];
     rework_by_ticket: (if ($rework | length) == 0 then null else $rework end),
     rework_runs: (if ($builds | length) == 0 then null else [$builds[] | length - 1] | add end),
     escalations: (if $recorded then [$ev[] | select(.event == "escalation")] | length else null end),
+    escalated: (if $recorded then [$ev[] | select(.event == "escalation")
+      | {ts, ticket: (.ticket // null), spec: (.spec // null), from: (.from // null), to: (.to // null),
+         from_model: (.from_model // null), from_effort: (.from_effort // null),
+         model: (.model // null), effort: (.effort // null), reason: (.reason // null)}] else null end),
     ci_pass_rate: (rate([$ci[] | select(.conclusion == "success")] | length; $ci | length) | round2),
     ci_median_duration_s: ($ci_dur | median),
     tests_added: ([$ev[] | select(.event == "gate") | .tests_added] | sumnn),

@@ -1,0 +1,6 @@
+{"version":1,"running":true,"assignments":{"6":{"ticket":6,"spec":3,"role":"implementer","model":"sonnet","effort":"high","branch":"t6-errors"}},
+ "merged":{"4":{"ticket":4,"spec":3,"branch":"t4-lexer","commit":"abc1234","merged_at":"2026-02-01T08:50:00Z"},
+           "5":{"ticket":5,"spec":3,"branch":"t5-grammar","commit":"def5678","merged_at":"2026-02-01T10:40:00Z"},
+           "3":{"ticket":3,"spec":3,"branch":"fix-review-3","commit":"fix9999","merged_at":"2026-02-01T11:30:00Z"}},
+ "integration":{"3":{"spec":3,"branch":"spec/3-parser","status":"active"}},
+ "estimates":{"3":{"first":4.0,"current":6.5,"updated":"2026-02-01T10:00:00Z"}}}

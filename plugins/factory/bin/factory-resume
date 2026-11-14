@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016 # jq programs are single-quoted on purpose
+# factory-resume: after a restart, plans what to do with the assignments, worktrees and
+# integration worktrees the previous session saved in .factory/state.json. Read-only.
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: factory-resume [--json] [--live AGENT_ID]... [--session ID] [--project DIR]
+
+Reads the saved state (.factory/state.json), the ledger and the project's git worktrees, and
+plans each saved assignment. It changes nothing. The agents of a previous session are gone, so an
+assignment is taken over, never assigned a second time (factory-state assign refuses a ticket that
+has one, and the frontier keeps assigned tickets out of its ready list).
+
+Per assignment, `action` is:
+  live     an agent this session still runs: its id is in --live, or the ledger shows this session
+           (--session, default $CLAUDE_SESSION_ID) started it. Leave it alone.
+  merged   its branch is already merged into the integration branch (a merge commit "Merge <branch>
+           into ..." is there), the merge only was not recorded: run factory-state merge --ticket N
+           --commit <commit>, then remove its worktree if it has one.
+  resume   its worktree exists: commit what is uncommitted there when `salvage` is true, remove the
+           worktree, run factory-state resume --ticket N --action resume, then start a builder of its
+           role on the branch (the "Resumed implementer" brief).
+  restart  its worktree is gone: factory-state resume --ticket N --action restart, then start a
+           builder of its role on the branch if it exists, else on the integration branch.
+Role, model, effort and `escalated` are the assignment's own, so an escalation is kept and a ticket
+is escalated at most once. Also listed: `orphans`, worktrees under <project>/.claude/worktrees that
+no assignment or integration branch owns (never removed here; ask the user), and the `integration`
+worktrees, `ensure` when one is gone (factory-integration ensure).
+
+Prints {running, assignments, orphans, integration} with --json, else a short text plan.
+USAGE
+}
+
+root=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+# shellcheck disable=SC1091 # lib/common.sh, checked on its own
+. "$root/lib/common.sh"
+
+die() { echo "factory-resume: $*" >&2; exit 2; }
+json=0 project="" session=${CLAUDE_SESSION_ID:-} live=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --json) json=1 ;;
+    --live) live+=("${2:?}"); shift ;;
+    --session) session=${2:?}; shift ;;
+    --project) project=${2:?}; shift ;;
+    -h | --help) usage; exit 0 ;;
+    *) die "unknown argument $1" ;;
+  esac
+  shift
+done
+[ -n "$project" ] || project=$(factory_project)
+export CLAUDE_PROJECT_DIR="$project"
+g() { git -C "$project" "$@"; }
+
+state=$("$root/bin/factory-state" show)
+ledger="$project/.factory/ledger.jsonl"
+live_json=$(jq -nc '$ARGS.positional' --args "${live[@]+"${live[@]}"}")
+
+# who started each ticket's current attempt: the session of its last assign, resume or escalation
+sessions='{}'
+if [ -f "$ledger" ]; then
+  sessions=$(jq -R -c 'fromjson? | select(type == "object" and .ticket != null and (.event | IN("assign", "resume", "escalation")))
+    | {key: (.ticket | tostring), value: .session_id}' "$ledger" | jq -s -c 'from_entries')
+fi
+
+# the project's worktrees: path<TAB>branch
+wts=$(g worktree list --porcelain 2>/dev/null | awk '
+  /^worktree / { if (w != "") print w "\t" b; w = substr($0, 10); b = "" }
+  /^branch refs\/heads\// { b = substr($0, 19) }
+  END { if (w != "") print w "\t" b }')
+branch_wt() { # the existing worktree that has branch $1 checked out
+  awk -F'\t' -v b="$1" '$2 == b { print $1; exit }' <<<"$wts" | while IFS= read -r d; do [ -d "$d" ] && echo "$d"; done
+}
+
+assignments='[]'
+owned=()
+while IFS= read -r a; do
+  [ -n "$a" ] || continue
+  ticket=$(jq -r .ticket <<<"$a")
+  spec=$(jq -r .spec <<<"$a")
+  branch=$(jq -r '.branch // empty' <<<"$a")
+  agent=$(jq -r '.agent // empty' <<<"$a")
+  ib=$(jq -r --arg s "$spec" '.integration[$s].branch // empty' <<<"$state")
+  ibref=""
+  if [ -n "$ib" ]; then
+    if g rev-parse -q --verify "refs/remotes/origin/$ib" >/dev/null; then ibref="origin/$ib"
+    elif g rev-parse -q --verify "refs/heads/$ib" >/dev/null; then ibref="$ib"; fi
+  fi
+  # its worktree: the recorded one if it exists, else the one with its branch checked out
+  wt=$(jq -r '.worktree // empty' <<<"$a")
+  if [ -n "$wt" ] && { [ ! -d "$wt" ] || ! grep -qxF -- "$wt" < <(cut -f1 <<<"$wts"); }; then wt=""; fi
+  if [ -z "$wt" ] && [ -n "$branch" ]; then wt=$(branch_wt "$branch"); fi
+  [ -z "$wt" ] || owned+=("$wt")
+  branch_exists=false ahead=0 dirty=0 commit=""
+  [ -z "$branch" ] || ! g rev-parse -q --verify "refs/heads/$branch" >/dev/null || branch_exists=true
+  if [ "$branch_exists" = true ] && [ -n "$ibref" ]; then ahead=$(g rev-list --count "$ibref..$branch")
+  fi
+  if [ -n "$wt" ]; then dirty=$(git -C "$wt" status --porcelain 2>/dev/null | wc -l | tr -d ' '); fi
+  if [ -n "$ibref" ] && [ -n "$branch" ]; then
+    commit=$(g log --merges --format='%H%x09%s' "$ibref" | awk -F'\t' -v p="Merge $branch into " 'index($2, p) == 1 { print $1; exit }')
+    if [ -n "$commit" ] && [ "$branch_exists" = true ] && ! g merge-base --is-ancestor "$branch" "$ibref"; then commit=""; fi
+  fi
+  started_session=$(jq -r --arg t "$ticket" '.[$t] // empty' <<<"$sessions")
+  if { [ -n "$agent" ] && jq -e --arg a "$agent" 'index($a) != null' <<<"$live_json" >/dev/null; } ||
+    { [ -n "$session" ] && [ "$started_session" = "$session" ]; }; then
+    action=live
+  elif [ -n "$commit" ]; then action=merged
+  elif [ -n "$wt" ]; then action=resume
+  else action=restart; fi
+  assignments=$(jq -c --argjson a "$a" --arg action "$action" --arg wt "$wt" --arg ib "$ib" --arg commit "$commit" \
+    --argjson be "$branch_exists" --argjson ahead "$ahead" --argjson dirty "$dirty" --argjson state "$state" \
+    '. + [{ticket: $a.ticket, spec: $a.spec, role: $a.role, model: $a.model, effort: $a.effort, branch: $a.branch,
+           agent: $a.agent, escalated: ($state.escalations | has($a.ticket | tostring)),
+           gate_failures: ($a.gate_failures // 0),
+           integration_branch: (if $ib == "" then null else $ib end),
+           action: $action, worktree: (if $wt == "" then null else $wt end),
+           branch_exists: $be, ahead: $ahead, dirty: $dirty,
+           salvage: ($action == "resume" and $dirty > 0),
+           commit: (if $action == "merged" then $commit else null end)}]' <<<"$assignments")
+done < <(jq -c '.assignments | to_entries | sort_by(.value.ticket) | .[].value' <<<"$state")
+
+# integration worktrees
+integration=$(jq -c '[.integration | to_entries | sort_by(.value.spec)[].value
+  | {spec, branch, status: (.status // "active"), worktree: (.worktree // null)}]' <<<"$state")
+exists='[]'
+while IFS= read -r i; do
+  [ -n "$i" ] || continue
+  w=$(jq -r '.worktree // empty' <<<"$i")
+  [ -z "$w" ] || owned+=("$w")
+  if [ -n "$w" ] && [ -d "$w" ]; then e=true; else e=false; fi
+  exists=$(jq -c --argjson i "$i" --argjson e "$e" '. + [$i + {worktree_exists: $e, action: (if $e then "none" else "ensure" end)}]' <<<"$exists")
+done < <(jq -c '.[]' <<<"$integration")
+
+# worktrees under .claude/worktrees that nothing owns
+orphans='[]'
+while IFS=$'\t' read -r path br; do
+  [ -n "$path" ] || continue
+  case "$path" in "$project/.claude/worktrees/"*) ;; *) continue ;; esac
+  case "$path" in "$project/.claude/worktrees/spec-"* | "$project/.claude/worktrees/ticket-"*) continue ;; esac
+  o=false
+  for w in "${owned[@]+"${owned[@]}"}"; do [ "$w" != "$path" ] || o=true; done
+  [ "$o" = false ] || continue
+  orphans=$(jq -c --arg p "$path" --arg b "$br" '. + [{path: $p, branch: (if $b == "" then null else $b end)}]' <<<"$orphans")
+done <<<"$wts"
+
+out=$(jq -n -c --argjson state "$state" --argjson a "$assignments" --argjson o "$orphans" --argjson i "$exists" \
+  '{running: $state.running, assignments: $a, orphans: $o, integration: $i}')
+
+if [ "$json" = 1 ]; then
+  jq . <<<"$out"
+  exit 0
+fi
+jq -r '
+  "Resume: \(.assignments | length) saved assignment(s)" + (if .running then "" else " (the manager was not running)" end),
+  (.assignments[] | "  #\(.ticket) \(.action)  \(.role) \(.model)/\(.effort)" + (if .escalated then " (escalated)" else "" end)
+    + (if .action == "live" then "  agent \(.agent // "?") still runs"
+       elif .action == "merged" then "  merge commit \(.commit); record it"
+       elif .action == "resume" then "  worktree \(.worktree)" + (if .salvage then ", \(.dirty) uncommitted path(s) to salvage" else "" end) + ", \(.ahead) commit(s) ahead"
+       else "  no worktree; branch " + (if .branch_exists then "\(.branch) kept, \(.ahead) commit(s) ahead" else "\(.branch) not created yet" end) end)),
+  (if (.orphans | length) > 0 then "Orphan worktrees (not removed; ask the user):" else empty end),
+  (.orphans[] | "  \(.path)" + (if .branch then " (\(.branch))" else "" end)),
+  (if (.integration | map(select(.action == "ensure")) | length) > 0 then "Integration worktrees to ensure:" else empty end),
+  (.integration[] | select(.action == "ensure") | "  spec #\(.spec) \(.branch)")' <<<"$out"

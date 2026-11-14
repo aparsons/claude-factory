@@ -1,0 +1,8 @@
+[
+  {
+    "name": "factory-watch",
+    "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/factory-watch\"",
+    "description": "Factory alerts: low disk or temporary space, a CI run past three times its median, a stalled worktree, a merged worktree not removed",
+    "when": "on-skill-invoke:factory"
+  }
+]

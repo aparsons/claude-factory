@@ -1,0 +1,15 @@
+{"ts":"2026-02-01T08:00:00Z","event":"assign","ticket":4,"spec":3,"role":"implementer","model":"sonnet","effort":"high","branch":"t4-lexer"}
+{"ts":"2026-02-01T08:00:01Z","event":"agent_launch","tool_use_id":"tu1","ticket":4,"role":"implementer"}
+{"ts":"2026-02-01T08:00:02Z","event":"agent_launch_result","tool_use_id":"tu1","agent_id":"a1","model":"claude-sonnet-5-5"}
+{"ts":"2026-02-01T08:40:00Z","event":"agent_stop","agent_id":"a1","role":"implementer","model":null,"ticket":null,"duration_s":2400,"outcome":"completed","tokens":{"input":1000000,"output":200000,"cache_read":8000000,"cache_creation":500000}}
+{"ts":"2026-02-01T08:41:00Z","event":"gate","ticket":4,"spec":3,"result":"pass","tests_added":4}
+{"ts":"2026-02-01T08:50:00Z","event":"merge","ticket":4,"spec":3,"branch":"t4-lexer","commit":"abc1234"}
+{"ts":"2026-02-01T09:00:00Z","event":"assign","ticket":5,"spec":3,"role":"implementer","model":"sonnet","effort":"high","branch":"t5-grammar"}
+{"ts":"2026-02-01T09:30:00Z","event":"gate","ticket":5,"spec":3,"result":"fail"}
+{"ts":"2026-02-01T09:31:00Z","event":"escalation","ticket":5,"from":"implementer","to":"implementer-deep","reason":"gate failed twice"}
+{"ts":"2026-02-01T10:30:00Z","event":"gate","ticket":5,"spec":3,"result":"pass","tests_added":6}
+{"ts":"2026-02-01T10:40:00Z","event":"merge","ticket":5,"spec":3,"branch":"t5-grammar","commit":"def5678"}
+{"ts":"2026-02-01T10:45:00Z","event":"escalation","ticket":99,"from":"implementer","to":"implementer-deep","reason":"other spec"}
+{"ts":"2026-02-01T11:00:00Z","event":"review","spec":3,"role":"standards-reviewer","findings":2}
+{"ts":"2026-02-01T11:05:00Z","event":"review","spec":3,"role":"spec-reviewer","findings":1}
+{"ts":"2026-02-01T11:06:00Z","event":"review","spec":7,"role":"spec-reviewer","findings":9}

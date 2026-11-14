@@ -23,10 +23,13 @@ dir="$project/.factory"
 ledger="$dir/ledger.jsonl"
 now=${LEDGER_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
 
+# Roles are the plugin's agent definitions (agents/<role>.md); any other agent type is "other".
+plugin=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+roles=$(for f in "$plugin"/agents/*.md; do if [ -f "$f" ]; then basename "$f" .md; fi; done | jq -R -s -c 'split("\n") | map(select(length > 0))')
 # Shared jq definitions: role from agent type; ticket number from text.
+# shellcheck disable=SC2016 # $roles is a jq variable
 defs='
-def role: (. // "") | sub("^factory:"; "")
-  | if IN("implementer","implementer-deep","merger","standards-reviewer","spec-reviewer","watcher") then . else "other" end;
+def role: (. // "") | sub("^factory:"; "") | if IN($roles[]) then . else "other" end;
 def ticket: (. // "") | (capture("#(?<n>[0-9]+)") | .n | tonumber) // null;
 '
 
@@ -34,7 +37,7 @@ case "$event" in
 PreToolUse | PostToolUse)
   [ "$(jq -r '.tool_name // empty' <<<"$input")" = "Agent" ] || exit 0
   if [ "$event" = PreToolUse ]; then
-    jq -c --arg ts "$now" "$defs"'
+    jq -c --arg ts "$now" --argjson roles "$roles" "$defs"'
       .tool_input as $t
       | {ts: $ts, event: "agent_launch", session_id: (.session_id // null),
          tool_use_id: (.tool_use_id // null),
@@ -55,7 +58,7 @@ PreToolUse | PostToolUse)
   fi
   ;;
 SubagentStart)
-  jq -c --arg ts "$now" "$defs"'
+  jq -c --arg ts "$now" --argjson roles "$roles" "$defs"'
     {ts: $ts, event: "agent_start", session_id: (.session_id // null),
      agent_id: (.agent_id // null), agent_type: (.agent_type // null),
      role: (.agent_type | role),
@@ -88,7 +91,7 @@ SubagentStop)
                   cache_read: sum(.cache_read_input_tokens), cache_creation: sum(.cache_creation_input_tokens)}}' \
       "$transcript" 2>/dev/null || echo '{}')
   fi
-  jq -c --arg ts "$now" --argjson started "$started" --argjson p "$parsed" "$defs"'
+  jq -c --arg ts "$now" --argjson roles "$roles" --argjson started "$started" --argjson p "$parsed" "$defs"'
     {ts: $ts, event: "agent_stop", session_id: (.session_id // null),
      agent_id: (.agent_id // null), agent_type: (.agent_type // null),
      role: (.agent_type | role),

@@ -19,6 +19,7 @@
     "rework_by_ticket": null,
     "rework_runs": null,
     "escalations": 0,
+    "escalated": [],
     "ci_pass_rate": null,
     "ci_median_duration_s": null,
     "tests_added": null,
