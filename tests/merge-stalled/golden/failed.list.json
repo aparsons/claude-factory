@@ -1,0 +1,16 @@
+[
+  {
+    "ticket": 14,
+    "spec": 9,
+    "role": "implementer",
+    "model": "sonnet",
+    "effort": "high",
+    "branch": "t14-failed",
+    "worktree": null,
+    "agent": null,
+    "started": "2026-11-12T22:00:00Z",
+    "age_min": 780,
+    "status": "running",
+    "stalled_min": null
+  }
+]
