@@ -6,6 +6,7 @@
 # resource safety net, not a security boundary, and a gate that blocks on its own bug would
 # stop every agent start (including the manager's recovery); a false pass costs at most
 # one worktree build, which the factory-watch monitor also flags.
+# It also blocks a builder above the 5-hour plan-usage threshold (factory-budget).
 #
 # Test seam: when FACTORY_TEST=1, these replace real measurements:
 #   FACTORY_TEST_FREE_DISK_MB, FACTORY_TEST_FREE_TEMP_MB,
@@ -156,6 +157,12 @@ problems=()
 [ "$free_disk" -lt "$need_disk" ] && problems+=("free disk is $free_disk MB, need $need_disk MB (2 x $build_mb MB worktree build [$build_source] + $reserve_mb MB reserve)")
 [ "$free_temp" -lt "$temp_min_mb" ] && problems+=("free temporary space is $free_temp MB, need $temp_min_mb MB")
 [ "$running" -ge "$cap" ] && problems+=("$running builders are running, the cap is $cap")
+# plan usage: no new builders above the 5-hour threshold until the window resets. A budget
+# that cannot be read does not block (fails open, like the measurements).
+b=$(CLAUDE_PROJECT_DIR="$project" "$plugin/bin/factory-budget" --json 2>/dev/null || true) # exits 3 when it has findings
+if [ "$(jq -r '.builders // ""' <<<"$b" 2>/dev/null || true)" = paused ]; then
+  problems+=("$(jq -r '.messages[0]' <<<"$b")")
+fi
 [ ${#problems[@]} -eq 0 ] && exit 0
 
 {
@@ -168,6 +175,6 @@ problems=()
     echo "No worktree is safe to remove (none is merged or empty)."
   fi
   echo "Free the space or wait for a running builder to finish, then start the builder again."
-  echo "Limits come from .factory/settings.json (builder_cap, disk_reserve_gb, temp_min_gb, default_worktree_gb)."
+  echo "Limits come from .factory/settings.json (builder_cap, disk_reserve_gb, temp_min_gb, default_worktree_gb, budget_five_hour_pct)."
 } >&2
 exit 2

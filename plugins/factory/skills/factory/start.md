@@ -17,7 +17,21 @@ Run `factory-frontier --json`, then show the user its text form (`factory-fronti
 
 For each spec with a ready ticket, and each ready standalone ticket, run `factory-integration ensure --spec <spec> --branch <spec_branch>` (the ticket's `spec` and `spec_branch`). It creates and pushes the branch from the default branch when absent, and keeps a dedicated worktree for merges; it never switches the user's checkout.
 
-## 4. Start implementers
+## 4. Budgets
+
+Before starting any builder, and after every merge, run `factory-budget`. Exit 0: carry on. Exit 3: each line it prints is a finding; act on it, one line to the user per finding, once (do not repeat a finding the user has already answered, until it changes):
+
+- `start no new builders until it resets` (5-hour usage above its limit): start no builder, and no escalated re-run, until the time it names; the `spawn-gate` hook refuses them anyway. Mergers, reviewers and agents already running go on. Resume when the window has reset (a heartbeat or `factory-budget` shows it).
+- `ask the user before continuing` (7-day usage above its limit): an outward step (spending past the budget). Ask in one question whether to continue; start no new builder until they say so.
+- `passes <n> times its first estimate` (a spec's estimated cost): report the spec, its first and current estimate and what it has spent (`factory-kpis`, `cost.by_spec`), then ask whether to continue it; start nothing more for that spec until they say so.
+
+No usage recorded (the user has no status line installed, or no subscription limits): say once that plan usage is unknown and that the budgets on usage are not enforced; spec estimates still are. The status line command is `factory-statusline` (see `--help`; installing it changes the user's settings, which is theirs to do).
+
+Estimates: when a spec's first builder starts, and after each of its merges, record `factory-state estimate --spec <s> --usd <x>`, where x = what the spec has spent so far (`factory-kpis --json`, `cost.by_spec[].usd_high`) plus its tickets not yet merged times the average `usd_high` of its merged tickets (of all tickets when none is merged yet). Record none while no ticket has a cost. `factory-state` keeps the first and the current.
+
+Thresholds are the user's: `budget_five_hour_pct` (80), `budget_seven_day_pct` (85) and `budget_spec_ratio` (1.5) in `.factory/settings.json`.
+
+## 5. Start implementers
 
 For each `ready` ticket in rank order, start one builder with the Agent tool. The frontier has already picked its role from the ticket: `implementer-deep` for security or foundational work (a security label on the ticket or its spec, a foundational label, or a ticket that unblocks many others), `implementer` for the rest. Do not pick another role yourself unless the user tells you to.
 
@@ -31,7 +45,7 @@ If the spawn gate blocks the start, stop starting builders; show its reason in o
 
 After each successful start, record it: `factory-state assign --ticket <n> --spec <s> --role <role> --model <model> --effort <effort> --branch <branch>`, then `factory-state update --ticket <n> --agent <agentId>`.
 
-## 5. When an implementer reports
+## 6. When an implementer reports
 
 Record the gate result first: `factory-state update --ticket <n> --worktree <path it reported>`, then `factory-state gate --ticket <n> --result pass|fail [--tests-added <k>]`. It prints `next`; do what it says:
 
@@ -52,21 +66,21 @@ A ticket is re-run once, one tier up; the tools enforce once.
 
 1. `factory-state escalate --ticket <n> --reason "<reason>"`. It moves the assignment one tier up (the next definition, `implementer` to `implementer-deep`, else one effort level up), records the escalation in the state and the ledger, and prints the new `agent`, `model`, `effort`, `effort_override`, the `branch` and the `previous` attempt. Exit 3 means it may not escalate: unassign with its message and tell the user.
 2. If `previous.worktree` is set, remove that worktree so its branch can move to the new attempt: `git worktree remove --force <previous.worktree>` (the factory created it; the branch and its commits stay).
-3. Start the new builder as in step 4, with `subagent_type` the printed `agent`, `model` and `effort` as printed, and the escalated implementer brief, which names the previous attempt and what failed. Then `factory-state update --ticket <n> --agent <agentId>`.
+3. Start the new builder as in step 5, with `subagent_type` the printed `agent`, `model` and `effort` as printed, and the escalated implementer brief, which names the previous attempt and what failed. Then `factory-state update --ticket <n> --agent <agentId>`.
 4. One line: `#<n> escalated: <previous.role> <previous.model>/<previous.effort> -> <role> <model>/<effort> (<reason>)`. The next digest lists it under Escalations.
 
-## 6. When a merger reports
+## 7. When a merger reports
 
 Read the JSON it relays from `factory-integration merge`:
 
 - `merged`: one line, `#<n> merged into <branch>`. The tool already recorded the merge, removed the worktree and the ticket branch.
 - `conflict`: nothing was pushed and the ticket's worktree is kept. Ask the ticket's implementer (SendMessage) to merge `origin/<spec_branch>`, resolve, rerun the check and report again; then start a merger again. If it is gone, unassign the ticket with the reason and tell the user.
-- `push-failed`: the pre-push check failed on the merged result. Record `factory-state gate --ticket <n> --result fail` and follow its `next` as in step 5, sending the output to the implementer on `retry`.
+- `push-failed`: the pre-push check failed on the merged result. Record `factory-state gate --ticket <n> --result fail` and follow its `next` as in step 6, sending the output to the implementer on `retry`.
 - `diverged`: someone else moved the integration branch. Stop that spec and ask the user.
 
-## 7. Continue
+## 8. Continue
 
-After every merge, recompute the frontier (`factory-frontier --json`) and go back to step 3 for newly ready tickets.
+After every merge, recompute the frontier (`factory-frontier --json`) and go back to step 3 for newly ready tickets (the budgets of step 4 apply again).
 
 When a spec's status is `complete`: run `factory-state integration --spec <s> --branch <branch> --status complete` and say "Spec #<s>: all tickets merged into <branch>." (for a `standalone` entry: "Ticket #<s>: merged into <branch>."). Start nothing more for it; review and its draft pull request come with ticket #9. A standalone ticket gets its own draft pull request from `ticket/<n>-<slug>` to the default branch, closing that one issue; merging it is an outward step.
 
