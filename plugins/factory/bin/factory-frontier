@@ -10,8 +10,8 @@ Reads the open issues labelled ready-for-agent (the label name comes from
 docs/agents/triage-labels.md), with their parents, sub-issues and native blockers, and prints:
   ready         tickets that can start now, ranked: security (ticket or its spec) first, then
                 priority label, then milestone (due date, then number), then most open issues
-                unblocked transitively, then oldest; each with its suggested role, model and effort
-                from data/roles.json, its ticket branch and its spec's integration branch
+                unblocked transitively, then oldest; each with its role (agent type factory:<role>), model and effort
+                from the agent definitions (agents/<role>.md), its ticket branch and its spec's integration branch
   running       tickets with an assignment in .factory/state.json
   blocked       tickets with an open blocker, a blocked spec, or another assignee
   specs         per spec: tickets, merged, open, status (needs-tickets, ready, running, blocked, complete)
@@ -79,7 +79,7 @@ state='{}'
 [ ! -f "$statefile" ] || state=$(jq -c . "$statefile")
 
 out=$(jq -n -c --argjson issues "$issues" --argjson state "$state" --argjson runs "$runs" \
-  --argjson default "$default" --argjson roles "$(jq -c . "$root/data/roles.json")" \
+  --argjson default "$default" --argjson roles "$(factory_roles "$root")" \
   --argjson settings "$(factory_settings "$project")" -f "$root/lib/frontier.jq")
 
 if [ "$json" = 1 ]; then

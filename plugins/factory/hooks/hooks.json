@@ -54,6 +54,15 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/factory-rules.sh\"",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "SubagentStop": [
@@ -63,6 +72,15 @@
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/ledger.sh\"",
             "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/build-clean.sh\"",
+            "timeout": 30
           }
         ]
       }

@@ -1,0 +1,1 @@
+{"session_id":"sess-1","transcript_path":"/home/u/.claude/projects/p/sess-1.jsonl","cwd":"@CWD@","permission_mode":"auto","hook_event_name":"SubagentStop","stop_hook_active":@ACTIVE@,"agent_id":"agent-abc123","agent_type":"@TYPE@","agent_transcript_path":"/nonexistent.jsonl","last_assistant_message":"Done.","background_tasks":[],"session_crons":[]}

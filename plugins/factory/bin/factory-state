@@ -21,7 +21,19 @@ Usage: factory-state <command> [options]
                                the ticket is merged into its integration branch: moves the assignment
                                to merged; ledger: merge {ticket, spec, branch, commit}
   gate --ticket N --result pass|fail [--tests-added K]
-                               ledger only: gate {ticket, spec, result, tests_added}
+                               ledger: gate {ticket, spec, result, tests_added}; counts the assignment's
+                               failures and prints {ticket, result, failures, next}: next is merge (pass),
+                               retry (first failure), escalate (second failure, never escalated, a tier
+                               above exists) or stop (otherwise: unassign and tell the user)
+  stall --ticket N             ledger: stall {ticket, spec}; prints {ticket, next}: escalate or stop
+  escalate --ticket N --reason TEXT
+                               re-run the ticket once one tier up (factory-roles next): the assignment
+                               takes the new role, model and effort; state: escalations[N]; ledger:
+                               escalation {ticket, spec, from, to, from_model, from_effort, model, effort,
+                               reason}. Prints {ticket, spec, branch, reason, role, agent, model, effort,
+                               effort_override, previous: {role, model, effort, agent, worktree}}.
+                               Exit 3, changing nothing, when the ticket has no assignment, was already
+                               escalated, or has no tier above.
   integration --spec S --branch B [--worktree P] [--status active|complete]
                                record a spec's integration branch
   estimate --spec S --usd X    record a spec's cost estimate (the first one is kept as first)
@@ -41,9 +53,10 @@ dir="$project/.factory"
 state="$dir/state.json"
 ledger="$dir/ledger.jsonl"
 lock="$dir/state.lock"
-empty='{"version": 1, "running": false, "assignments": {}, "merged": {}, "integration": {}, "estimates": {}}'
+empty='{"version": 1, "running": false, "assignments": {}, "merged": {}, "integration": {}, "estimates": {}, "escalations": {}}'
 
 die() { echo "factory-state: $*" >&2; exit 2; }
+refuse() { echo "factory-state: $*" >&2; exit 3; }
 current() {
   if [ -f "$state" ]; then
     jq -c --argjson e "$empty" '$e * .' "$state" || die "$state is not valid JSON; fix or remove it"
@@ -88,6 +101,14 @@ event() {
   [ -d "$dir" ] || { mkdir -p "$dir"; factory_exclude "$project" /.factory/; }
   jq -nc --arg ts "$(factory_now)" --arg sid "${CLAUDE_SESSION_ID:-}" "$@" \
     '{ts: $ts} + ('"$expr"') + {session_id: (if $sid == "" then null else $sid end)}' >>"$ledger"
+}
+
+# can_escalate <ticket>: it has an assignment, was never escalated, and its role has a tier above
+can_escalate() {
+  local a
+  a=$(current | jq -c --arg t "$1" 'if .escalations | has($t) then empty else .assignments[$t] // empty end')
+  [ -n "$a" ] || return 1
+  "$root/bin/factory-roles" next "$(jq -r .role <<<"$a")" --effort "$(jq -r .effort <<<"$a")" --project "$project" >/dev/null 2>&1
 }
 
 num_re='^[0-9]+$'
@@ -183,9 +204,59 @@ gate)
   case "$result" in pass | fail) ;; *) die "gate needs --result pass or fail" ;; esac
   [ -z "$tests_added" ] || need_num --tests-added "$tests_added"
   spec=$(current | jq -r --arg t "$ticket" '(.assignments[$t] // .merged[$t] // {}).spec // empty')
+  failures=null
+  if current | jq -e --arg t "$ticket" '.assignments | has($t)' >/dev/null; then
+    if [ "$result" = fail ]; then
+      mutate '.assignments[$t].gate_failures = ((.assignments[$t].gate_failures // 0) + 1)' --arg t "$ticket"
+    else
+      mutate 'del(.assignments[$t].gate_failures)' --arg t "$ticket"
+    fi
+    failures=$(current | jq --arg t "$ticket" '.assignments[$t].gate_failures // 0')
+  fi
   event '{event: "gate", ticket: ($t | tonumber), spec: (if $s == "" then null else ($s | tonumber) end), result: $r,
       tests_added: (if $k == "" then null else ($k | tonumber) end)}' \
     --arg t "$ticket" --arg s "$spec" --arg r "$result" --arg k "$tests_added"
+  if [ "$result" = pass ]; then next=merge failures=0
+  elif [ "$failures" = null ]; then next=stop
+  elif [ "$failures" -lt 2 ]; then next=retry
+  elif can_escalate "$ticket"; then next=escalate
+  else next=stop; fi
+  jq -nc --argjson t "$ticket" --arg r "$result" --argjson f "$failures" --arg n "$next" \
+    '{ticket: $t, result: $r, failures: $f, next: $n}'
+  ;;
+stall)
+  need_num --ticket "$ticket"
+  spec=$(current | jq -r --arg t "$ticket" '(.assignments[$t] // {}).spec // empty')
+  event '{event: "stall", ticket: ($t | tonumber), spec: (if $s == "" then null else ($s | tonumber) end)}' \
+    --arg t "$ticket" --arg s "$spec"
+  if can_escalate "$ticket"; then next=escalate; else next=stop; fi
+  jq -nc --argjson t "$ticket" --arg n "$next" '{ticket: $t, next: $n}'
+  ;;
+escalate)
+  need_num --ticket "$ticket"
+  [ -n "$reason" ] || die "escalate needs --reason"
+  a=$(current | jq -c --arg t "$ticket" '.assignments[$t] // empty')
+  [ -n "$a" ] || refuse "ticket #$ticket has no assignment"
+  e=$(current | jq -c --arg t "$ticket" '.escalations[$t] // empty')
+  [ -z "$e" ] || refuse "ticket #$ticket was already escalated once ($(jq -r '"\(.from.role) \(.from.model)/\(.from.effort) to \(.to.role) \(.to.model)/\(.to.effort)"' <<<"$e")); stop and tell the user"
+  to=$("$root/bin/factory-roles" next "$(jq -r .role <<<"$a")" --effort "$(jq -r .effort <<<"$a")" --project "$project" 2>/dev/null) ||
+    refuse "no tier above $(jq -r '"\(.role) \(.model)/\(.effort)"' <<<"$a") for ticket #$ticket; stop and tell the user"
+  # the previous attempt's worktree: as recorded, else the worktree that has the ticket's branch
+  wt=$(jq -r '.worktree // empty' <<<"$a")
+  if [ -z "$wt" ]; then
+    wt=$(git -C "$project" worktree list --porcelain 2>/dev/null | awk -v b="branch refs/heads/$(jq -r .branch <<<"$a")" \
+      '/^worktree / { w = substr($0, 10) } $0 == b { print w; exit }' || true)
+  fi
+  mutate '.escalations[$t] = {ticket: $a.ticket, spec: $a.spec, from: ($a | {role, model, effort}),
+      to: ($to | {role, model, effort}), reason: $r, at: $now}
+    | .assignments[$t] = ($a + ($to | {role, model, effort}) + {agent: null, worktree: null, started: $now} | del(.gate_failures))' \
+    --arg t "$ticket" --argjson a "$a" --argjson to "$to" --arg r "$reason"
+  event '{event: "escalation", ticket: $a.ticket, spec: $a.spec, from: $a.role, to: $to.role,
+      from_model: $a.model, from_effort: $a.effort, model: $to.model, effort: $to.effort, reason: $r}' \
+    --argjson a "$a" --argjson to "$to" --arg r "$reason"
+  jq -nc --argjson a "$a" --argjson to "$to" --arg r "$reason" --arg wt "$wt" \
+    '{ticket: $a.ticket, spec: $a.spec, branch: $a.branch, reason: $r} + $to
+     + {previous: (($a | {role, model, effort, agent}) + {worktree: (if $wt == "" then null else $wt end)})}'
   ;;
 integration)
   need_num --spec "$spec"

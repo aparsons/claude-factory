@@ -59,8 +59,7 @@ fi
 
 # --- check command ---
 check_command=$(factory_check_command "$project")
-claude_md=""
-for f in "$project/CLAUDE.md" "$project/.claude/CLAUDE.md"; do [ -f "$f" ] && { claude_md=$f; break; }; done
+claude_md=$(factory_claude_md "$project")
 if [ -z "$claude_md" ] && [ -z "$check_command" ]; then
   miss claude-md "no CLAUDE.md in the project" "add a CLAUDE.md that names the check command, e.g. 'Run \`scripts/check.sh\` before every commit'"
 elif [ -z "$check_command" ]; then

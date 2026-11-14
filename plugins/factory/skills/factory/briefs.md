@@ -23,6 +23,22 @@ Before you report:
 Report in under 150 words: branch, worktree path (`pwd`), head commit, check result with evidence (the last summary line; on failure what failed), number of tests added, and anything the next tickets must know.
 ```
 
+## Escalated implementer
+
+The implementer brief, with its worktree step replaced by this one and the paragraph after it added. `<what failed>`: the failing check output or the stall, in a few lines.
+
+```
+You are in your own git worktree. First put it on the previous attempt's branch, or on the spec's integration branch if that branch is gone:
+  git fetch origin
+  git rev-parse -q --verify refs/heads/<branch> && git reset --hard <branch> || git reset --hard origin/<spec_branch>
+  git branch -M <branch>
+Confirm `git log -1` shows that commit before you start.
+
+This ticket is escalated: a previous attempt by <previous.role> (<previous.model>/<previous.effort>) failed (<reason>). What failed:
+<what failed>
+Read its commits on <branch> first (`git log origin/<spec_branch>..HEAD`). Keep what is sound, find the cause of the failure and fix it; start over from origin/<spec_branch> if the attempt is not worth keeping.
+```
+
 ## Merger
 
 ```
