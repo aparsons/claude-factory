@@ -40,7 +40,7 @@ After each successful start, record it: `factory-state assign --ticket <n> --spe
 
 Read the JSON it relays from `factory-integration merge`:
 
-- `merged`: one line, `#<n> merged into <branch>`. The tool already recorded the merge, removed the worktree and the ticket branch.
+- `merged`: one line, `#<n> merged into <branch>`, with the draft pull request's URL when `pull_request.created` is true (`draft PR #<number> opened: <url>`). The tool already recorded the merge, removed the worktree and the ticket branch, and opened the spec's draft pull request or added the ticket to it. If `pull_request` is null, say so with `pull_request_error` in one line; the next merge retries it. The pull request stays a draft: marking it ready or merging it is an outward step.
 - `conflict`: nothing was pushed and the ticket's worktree is kept. Ask the ticket's implementer (SendMessage) to merge `origin/<spec_branch>`, resolve, rerun the check and report again; then start a merger again. If it is gone, unassign the ticket with the reason and tell the user.
 - `push-failed`: the pre-push check failed on the merged result. Record `factory-state gate --ticket <n> --result fail` and send the output to the implementer as above.
 - `diverged`: someone else moved the integration branch. Stop that spec and ask the user.
@@ -49,6 +49,6 @@ Read the JSON it relays from `factory-integration merge`:
 
 After every merge, recompute the frontier (`factory-frontier --json`) and go back to step 3 for newly ready tickets.
 
-When a spec's status is `complete`: run `factory-state integration --spec <s> --branch <branch> --status complete` and say "Spec #<s>: all tickets merged into <branch>." Start nothing more for it; review and its draft pull request come with ticket #9.
+When a spec's status is `complete`: run `factory-state integration --spec <s> --branch <branch> --status complete` and say "Spec #<s>: all tickets merged into <branch>." Start nothing more for it; spec review comes with ticket #9, which reuses the draft pull request the first merge opened rather than opening another.
 
 When nothing is ready and nothing is running, go idle: say in a few lines what waits on the user (specs needing `/to-tickets`, blocked specs and why, failures left for them) and stop working until they reply.

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2015 # `test && check || fail` is the assertion form
 # Suite: factory-integration creates a spec's integration branch and worktree, and merges a
-# finished ticket into it, against a temporary origin (no network, no gh).
+# finished ticket into it, against a temporary origin (no network), and keeps the spec's draft
+# pull request through a fake gh (tests/integration/bin/gh) on PATH.
 set -euo pipefail
 for v in $(git rev-parse --local-env-vars); do unset "$v"; done
 root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -15,11 +16,19 @@ pass=0
 fail() { echo "FAIL: $*"; exit 1; }
 ok() { pass=$((pass + 1)); }
 
+export FAKE_GH_DIR="$tmp/gh"
+mkdir -p "$FAKE_GH_DIR"
+echo '[]' >"$FAKE_GH_DIR/prs.json"
+echo '{"3": "Spec: the parser", "12": "Parse the header", "13": "Read the body", "14": "Other body", "15": "Write the footer", "16": "Sixteen", "17": "Late"}' >"$FAKE_GH_DIR/issues.json"
+export PATH="$root/tests/integration/bin:$PATH"
+prs() { jq "$@" "$FAKE_GH_DIR/prs.json"; }
+
 # origin with main; the project is a clone on main
 git init -q --bare -b main "$tmp/origin.git"
 git clone -q "$tmp/origin.git" "$tmp/seed" 2>/dev/null
 printf 'target/\n' >"$tmp/seed/.gitignore"
 echo base >"$tmp/seed/c.txt"
+mkdir -p "$tmp/seed/.claude" && echo '{"attribution": {"pr": "Made by the test factory"}}' >"$tmp/seed/.claude/settings.json"
 git -C "$tmp/seed" add . && git -C "$tmp/seed" commit -q -m base && git -C "$tmp/seed" push -q origin main
 p="$tmp/proj"
 git clone -q "$tmp/origin.git" "$p"
@@ -60,10 +69,30 @@ jq -e '.result == "merged" and .worktree_removed == true and .branch_deleted == 
 tail -n 1 "$p/.factory/ledger.jsonl" | jq -e '.event == "merge" and .ticket == 12 and .spec == 3' >/dev/null || fail "merge event"; ok
 [ "$(git -C "$p" symbolic-ref --short HEAD)" = main ] && [ "$(git -C "$p" rev-parse main)" = "$(o rev-parse main)" ] || fail "main untouched"; ok
 
+# --- the first merge opens the spec's draft pull request ---
+prs -e 'length == 1' >/dev/null || fail "one pull request opened: $(prs -c .)"; ok
+prs -e '.[0] | .isDraft and .head == "spec/3-parser" and .base == "main" and .state == "OPEN"' >/dev/null || fail "draft from the integration branch to main: $(prs -c .)"; ok
+jq -e '.pull_request == {number: 101, url: "https://github.com/o/r/pull/101", created: true}' <<<"$out" >/dev/null || fail "merge result names the pull request: $out"; ok
+prs -e '.[0].title | contains("#3") and contains("the parser")' >/dev/null || fail "title names the spec: $(prs -r '.[0].title')"; ok
+body=$(prs -r '.[0].body')
+grep -qxF -- '- #12 Parse the header' <<<"$body" && grep -qxF 'Closes #12' <<<"$body" && grep -qF '#3' <<<"$body" || fail "body names the spec and ticket: $body"; ok
+[ "$(tail -n 1 <<<"$body")" = "Made by the test factory" ] || fail "body ends with the project's attribution: $body"; ok
+
 # --- conflict: stop, abort, keep everything ---
 implement 13 t13-a c.txt from-13
 implement 14 t14-b c.txt from-14
-"$fi_" merge --ticket 13 --branch t13-a --worktree "$p/.claude/worktrees/agent-13" >/dev/null || fail "merge 13"
+# the user adds a line of their own to the pull request's body; the update keeps it
+prs '.[0].body |= sub("\n\n- #12"; "\n\nReviewer note: keep this.\n\n- #12")' >"$tmp/prs.json" && mv "$tmp/prs.json" "$FAKE_GH_DIR/prs.json"
+before_body=$(prs -r '.[0].body')
+out=$("$fi_" merge --ticket 13 --branch t13-a --worktree "$p/.claude/worktrees/agent-13") || fail "merge 13: $out"
+
+# --- a later merge adds its ticket and its Closes line to the same pull request ---
+prs -e 'length == 1' >/dev/null || fail "no second pull request: $(prs -c .)"; ok
+jq -e '.pull_request == {number: 101, url: "https://github.com/o/r/pull/101", created: false}' <<<"$out" >/dev/null || fail "merge 13 result names the pull request: $out"; ok
+body=$(prs -r '.[0].body')
+expected=$(awk '{ print } /^- #12 Parse the header$/ { print "- #13 Read the body" } /^Closes #12$/ { print "Closes #13" }' <<<"$before_body")
+grep -qxF 'Reviewer note: keep this.' <<<"$body" && [ "$body" = "$expected" ] || fail "body gains #13 and nothing else changes: $(diff <(echo "$expected") <(echo "$body"))"; ok
+prs -e '.[0].isDraft' >/dev/null || fail "still a draft"; ok
 before=$(o rev-parse spec/3-parser)
 code=0; out=$("$fi_" merge --ticket 14 --branch t14-b --worktree "$p/.claude/worktrees/agent-14") || code=$?
 [ "$code" = 3 ] && jq -e '.result == "conflict" and .files == ["c.txt"]' <<<"$out" >/dev/null || fail "conflict ($code): $out"; ok
@@ -83,12 +112,28 @@ code=0; out=$("$fi_" merge --ticket 15 --branch t15-c --worktree "$p/.claude/wor
 [ "$(git -C "$wt" rev-parse HEAD)" = "$(o rev-parse spec/3-parser)" ] || fail "local merge undone after the push failed"; ok
 "$st" show | jq -e '.assignments | has("15")' >/dev/null || fail "assignment kept after the push failed"; ok
 rm "$p/.git/hooks/pre-push"
+prs -e 'length == 1 and (.[0].body | contains("#15") | not)' >/dev/null || fail "a failed push leaves the pull request alone"; ok
+
+# --- a third merge finds the open pull request and opens no other ---
+out=$("$fi_" merge --ticket 15 --branch t15-c --worktree "$p/.claude/worktrees/agent-15") || fail "merge 15: $out"
+prs -e 'length == 1' >/dev/null || fail "still one pull request: $(prs -c .)"; ok
+[ "$(grep -c '^pr create' "$FAKE_GH_DIR/calls.log")" = 1 ] || fail "gh pr create called once: $(cat "$FAKE_GH_DIR/calls.log")"; ok
+! grep -qE '^pr (ready|merge)' "$FAKE_GH_DIR/calls.log" || fail "never marked ready or merged"; ok
+body=$(prs -r '.[0].body')
+[ "$(grep -c '^- #1[235] ' <<<"$body")" = 3 ] && [ "$(grep -c '^Closes #1[235]$' <<<"$body")" = 3 ] && [ "$(tail -n 1 <<<"$body")" = "Made by the test factory" ] || fail "three tickets listed and closed: $body"; ok
+jq -e '.pull_request.number == 101 and .pull_request.created == false' <<<"$out" >/dev/null || fail "merge 15 result: $out"; ok
+
+# --- gh unavailable: the merge still succeeds, without a pull request ---
+implement 16 t16-d g.txt sixteen
+out=$(FAKE_GH_FAIL=1 "$fi_" merge --ticket 16 --branch t16-d --worktree "$p/.claude/worktrees/agent-16") || fail "merge without gh: $out"
+jq -e '.result == "merged" and .pull_request == null and (.pull_request_error | length > 0)' <<<"$out" >/dev/null || fail "merge without gh reports no pull request: $out"; ok
 
 # --- diverged: the local integration branch and origin both moved ---
 git clone -q -b spec/3-parser "$tmp/origin.git" "$tmp/other"
 echo other >"$tmp/other/e.txt" && git -C "$tmp/other" add e.txt && git -C "$tmp/other" commit -q -m other && git -C "$tmp/other" push -q origin spec/3-parser
 echo local >"$wt/f.txt" && git -C "$wt" add f.txt && git -C "$wt" commit -q -m local
-code=0; out=$("$fi_" merge --ticket 15 --branch t15-c --worktree "$p/.claude/worktrees/agent-15") || code=$?
+implement 17 t17-e h.txt seventeen
+code=0; out=$("$fi_" merge --ticket 17 --branch t17-e --worktree "$p/.claude/worktrees/agent-17") || code=$?
 [ "$code" = 4 ] && jq -e '.result == "diverged"' <<<"$out" >/dev/null || fail "diverged ($code): $out"; ok
 
 # --- refusals ---

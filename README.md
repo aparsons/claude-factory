@@ -13,7 +13,7 @@ A Claude Code plugin that turns your session into the manager of an agent-driven
 
 In a project that follows the mattpocock-skills issue conventions (specs and tickets as issues, the triage labels, a check command named in `CLAUDE.md`):
 
-- `/factory start`: checks prerequisites, then runs an implementer per ready ticket in rank order, each in its own worktree on the spec's integration branch `spec/<n>-<slug>`, and a merger that merges it there. It never merges to the default branch, tags, publishes or comments without asking.
+- `/factory start`: checks prerequisites, then runs an implementer per ready ticket in rank order, each in its own worktree on the spec's integration branch `spec/<n>-<slug>`, and a merger that merges it there. After a spec's first merge it opens one draft pull request from the integration branch, so CI runs there from the start, and adds each later ticket to it. It never marks that pull request ready, merges to the default branch, tags, publishes or comments without asking.
 - `/factory status`: frontier, running agents, blocked specs, KPIs.
 - `/factory stop`: no new agents; offers to stop running ones; writes a digest.
 
