@@ -45,6 +45,10 @@ Read the JSON it relays from `factory-integration merge`:
 - `push-failed`: the pre-push check failed on the merged result. Record `factory-state gate --ticket <n> --result fail` and send the output to the implementer as above.
 - `diverged`: someone else moved the integration branch. Stop that spec and ask the user.
 
+## Rework of a merged ticket
+
+When something found after a ticket merged needs a follow-up fix to that same ticket (CI on the integration branch or the pull request fails because of it, or the user sends it back), do not assign it by hand: `factory-state rework --ticket <n> --reason "<what failed>"`. It moves the merged ticket back into the assignments (role, model and effort of its first assignment; `--role`, `--model`, `--effort` and `--branch` override them), keeps the earlier merge, and records a gate failure and a `rework` event, so the ticket stops counting as first-try and its rework shows in the KPIs. Start an implementer for it as in step 4 (brief: the failure and the earlier merge commit, `git log -1` of the ticket's `merged` record), then continue at step 5: a pass is merged as usual, and the ticket's merged record gains the new commit and keeps the old. A fix that is a new piece of work, not a correction of that ticket, is a new ticket instead.
+
 ## 7. Continue
 
 Whenever an agent finishes (its completion notice arrives), run `factory-integration cleanup`: it retries the clean-up of every merged ticket whose worktree or branch was left because a lock was still held, and leaves a running agent's alone. Say one line for each ticket it finishes cleaning.

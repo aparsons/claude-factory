@@ -45,6 +45,12 @@ def types: ["input", "output", "cache_read", "cache_creation"];
     | ([$merged[] | select(.ticket == $t) | .s] | min) as $m
     | select($first != null and $m >= $first) | $m - $first]) as $leads
 | ([$ev[] | select(.event == "gate" and .ticket != null)] | sort_by(.ts) | group_by(.ticket)) as $gates
+| ([$gates[] | .[0].ticket as $t | {
+    ticket: $t, spec: $specof[$t | tostring],
+    gate_failures: ([.[] | select(.result == "fail")] | length),
+    escalations: ([$ev[] | select(.event == "escalation" and .ticket == $t)] | length),
+    reworks: ([$ev[] | select(.event == "rework" and .ticket == $t)] | length)}
+    | . + {rework: (.gate_failures + .escalations), first_try: (.gate_failures == 0)}]) as $by_gate
 | ([$stops[] | select(.ticket != null and (.role == "implementer" or .role == "implementer-deep"))] | group_by(.ticket)) as $builds
 | ([($runs // [])[] | select(.conclusion == "success" or .conclusion == "failure")]) as $ci
 | ([$ci[] | select(.startedAt != null and .updatedAt != null) | (.updatedAt | ts2s) - (.startedAt | ts2s)]) as $ci_dur
@@ -68,7 +74,8 @@ def types: ["input", "output", "cache_read", "cache_creation"];
     active_agents: (if $recorded then [$started[] | select(. as $a | $stopped | index($a) | not)] | length else null end),
     stalls: (if $recorded then [$ev[] | select(.event == "stall")] | length else null end)},
   quality: {
-    first_try_gate_pass_rate: (rate([$gates[] | select(.[0].result == "pass")] | length; $gates | length) | round2),
+    first_try_gate_pass_rate: (rate([$by_gate[] | select(.first_try)] | length; $by_gate | length) | round2),
+    rework_by_ticket: (if ($by_gate | length) == 0 then null else $by_gate end),
     rework_runs: (if ($builds | length) == 0 then null else [$builds[] | length - 1] | add end),
     escalations: (if $recorded then [$ev[] | select(.event == "escalation")] | length else null end),
     ci_pass_rate: (rate([$ci[] | select(.conclusion == "success")] | length; $ci | length) | round2),

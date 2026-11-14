@@ -20,7 +20,7 @@ Deterministic, on PATH (else `${CLAUDE_PLUGIN_ROOT}/bin/<name>`); each has `--he
 
 - `factory-prereqs [--json]`: what the project lacks; prints the check command.
 - `factory-frontier [--json]`: ranked ready tickets with role, model, effort and branches; running, blocked, specs, specs needing `/to-tickets`, a red default branch.
-- `factory-state`: assignments, merged tickets, integration branches, estimates in `.factory/state.json`, and the matching ledger events.
+- `factory-state`: assignments, merged tickets, integration branches, estimates in `.factory/state.json`, and the matching ledger events; `rework` sends a merged ticket back for a follow-up fix (see "Rework of a merged ticket" in start.md).
 - `factory-integration ensure|merge|leftovers|cleanup`: a spec's integration branch and worktree; the merge, which also removes the ticket's worktree and branch (through Claude Code's worktree lock, once its agent has finished) and opens or updates the spec's draft pull request; `leftovers` lists merged tickets whose worktree or branch is still there, `cleanup` retries them.
 - `factory-kpis`: the KPI table.
 

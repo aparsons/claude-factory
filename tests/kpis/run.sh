@@ -30,6 +30,8 @@ case_ missing-ledger --ledger "$tmp/does-not-exist.jsonl"
 case_ one-spec --ledger "$fx/one-spec.jsonl" --git-log "$fx/one-spec.gitlog" --runs "$fx/one-spec.runs.json" --usage "$fx/one-spec.usage.json"
 case_ escalation --ledger "$fx/escalation.jsonl"
 case_ mixed --ledger "$fx/mixed.jsonl"
+# merged, reworked and merged again (ticket 7: not first-try, one rework), pass only (ticket 8)
+case_ rework --ledger "$fx/rework.jsonl"
 
 # Cost is the range of the prices file: one Sonnet 5.5 run of 1M input tokens costs $2 at both ends.
 printf '%s\n' '{"ts":"2026-01-01T00:00:00Z","event":"agent_stop","agent_id":"x","role":"other","model":"claude-sonnet-5-5-20260101","ticket":null,"tokens":{"input":1000000,"output":null,"cache_read":null,"cache_creation":null}}' >"$tmp/one.jsonl"

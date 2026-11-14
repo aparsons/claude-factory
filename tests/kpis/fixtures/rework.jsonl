@@ -1,0 +1,10 @@
+{"ts":"2026-03-01T08:00:00Z","event":"assign","ticket":7,"spec":2,"role":"implementer","model":"sonnet","effort":"high","branch":"t7-a"}
+{"ts":"2026-03-01T08:30:00Z","event":"gate","ticket":7,"spec":2,"result":"pass","tests_added":3}
+{"ts":"2026-03-01T08:31:00Z","event":"merge","ticket":7,"spec":2,"branch":"t7-a","commit":"c1"}
+{"ts":"2026-03-01T09:00:00Z","event":"gate","ticket":7,"spec":2,"result":"fail","tests_added":null,"reason":"macOS CI failed"}
+{"ts":"2026-03-01T09:00:00Z","event":"rework","ticket":7,"spec":2,"reason":"macOS CI failed","role":"implementer","model":"sonnet","effort":"high","branch":"t7-a"}
+{"ts":"2026-03-01T09:20:00Z","event":"gate","ticket":7,"spec":2,"result":"pass","tests_added":1}
+{"ts":"2026-03-01T09:21:00Z","event":"merge","ticket":7,"spec":2,"branch":"t7-a","commit":"c2"}
+{"ts":"2026-03-01T08:40:00Z","event":"assign","ticket":8,"spec":2,"role":"implementer","model":"sonnet","effort":"high","branch":"t8-b"}
+{"ts":"2026-03-01T09:30:00Z","event":"gate","ticket":8,"spec":2,"result":"pass","tests_added":2}
+{"ts":"2026-03-01T09:31:00Z","event":"merge","ticket":8,"spec":2,"branch":"t8-b","commit":"c3"}
