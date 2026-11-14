@@ -109,6 +109,52 @@ rm -rf "$project/.worktrees"; git -C "$project" worktree prune
 real "$fx/agent-implementer.json" FACTORY_TEST_FREE_DISK_MB=4000
 expect "default 4 GB build used when no worktrees" 2 "[default]" "need 8192 MB"
 
+# --- build output of the main checkout and of integration worktrees counts too ---
+# Faked large main-checkout build output: 12000 MB in target/ makes the build estimate 12000 MB.
+mkdir -p "$project/.factory"
+echo '{"builder_cap": 9, "disk_reserve_gb": 0}' >"$project/.factory/settings.json"
+real "$fx/agent-implementer.json" FACTORY_TEST_FREE_DISK_MB=23999 FACTORY_TEST_MAIN_BUILD_MB=12000
+expect "large main-checkout build output raises the need" 2 "need 24000 MB" "2 x 12000 MB"
+[[ "$err" == *"Build output outside ticket worktrees"* && "$err" == *"main checkout"* && "$err" == *"target"* && "$err" == *"12000 MB"* ]] ||
+  fail "block reason does not list the main checkout's build output with its size: $err"
+[[ "$err" == *"Nothing is using"* && "$err" == *"only with the user's yes"* ]] || fail "block reason does not offer cleaning with the user: $err"
+pass=$((pass + 1))
+real "$fx/agent-implementer.json" FACTORY_TEST_FREE_DISK_MB=24000 FACTORY_TEST_MAIN_BUILD_MB=12000
+expect "enough room for the main checkout's build size passes" 0
+
+# Real files: the main checkout's untracked and ignored paths are measured; its worktree dirs are not.
+mkdir -p "$project/target" "$project/.worktrees"
+head -c 3145728 /dev/zero >"$project/target/out.bin"
+head -c 9000000 /dev/zero >"$project/.worktrees/stray.bin"
+real "$fx/agent-implementer.json" FACTORY_TEST_FREE_DISK_MB=5
+expect "real main-checkout build output measured" 2 "main checkout" "target (3 MB)"
+[[ "$err" != *"stray.bin"* ]] || fail "worktree directory counted as main build output: $err"
+
+# An integration worktree's build output is listed and counts toward the estimate.
+git -C "$project" worktree add -q "$project/.worktrees/spec-x" spec/x
+mkdir -p "$project/.worktrees/spec-x/build"
+head -c 6291456 /dev/zero >"$project/.worktrees/spec-x/build/out.bin"
+real "$fx/agent-implementer.json" FACTORY_TEST_FREE_DISK_MB=11
+expect "integration worktree build output listed" 2 "integration worktree .worktrees/spec-x" "build (6 MB)"
+
+# Cleaning is offered only when nothing is using the main checkout's build output.
+(cd "$project/target" && exec sleep 30) &
+holder=$!
+sleep 0.3
+real "$fx/agent-implementer.json" FACTORY_TEST_FREE_DISK_MB=5
+kill "$holder" 2>/dev/null || true
+wait "$holder" 2>/dev/null || true
+[[ "$err" == *"in use"* && "$err" != *"Nothing is using"* ]] || fail "cleaning offered while a process runs in the build directory: $err"
+pass=$((pass + 1))
+real "$fx/agent-implementer.json" FACTORY_TEST_FREE_DISK_MB=5
+[[ "$err" == *"Nothing is using"* ]] || fail "cleaning not offered when nothing uses the build directory: $err"
+[ -f "$project/target/out.bin" ] || fail "the gate deleted the main checkout's build output"
+pass=$((pass + 1))
+
+# Remove the build-output fixtures again before the awaiting-merge cases.
+git -C "$project" worktree remove --force "$project/.worktrees/spec-x"
+rm -rf "$project/target" "$project/.worktrees/stray.bin"
+
 # --- awaiting merge: a ticket whose latest gate passed and whose agent finished is not a running builder ---
 # State and ledger are fixtures: tickets 101-104 each have a worktree with unmerged work; which of them are
 # running or awaiting merge depends only on the recorded gate events and agent stops.

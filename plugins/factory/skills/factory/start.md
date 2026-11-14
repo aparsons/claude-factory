@@ -26,7 +26,7 @@ For each `ready` ticket in rank order, start one implementer with the Agent tool
 - `model` and `effort`: the ticket's `model` and `effort`
 - `prompt`: the implementer brief from `${CLAUDE_PLUGIN_ROOT}/skills/factory/briefs.md`, filled in
 
-If the spawn gate blocks the start, stop starting builders; show its reason in one line. Remove a worktree it lists as safe only if the factory created it (otherwise ask). Start the next builder when one finishes. A worktree whose ticket's latest gate passed and whose agent has finished is `awaiting merge`: it counts toward disk but not the cap, and the reason lists it apart from the running builders; a later gate failure (sent back) makes it running again.
+If the spawn gate blocks the start, stop starting builders; show its reason in one line. Remove a worktree it lists as safe only if the factory created it (otherwise ask). Start the next builder when one finishes. The gate counts the main checkout's and the integration worktrees' build output too and lists it with sizes; it may offer cleaning the main checkout's build output: pass that offer to the user, and clean it only on their yes. A worktree whose ticket's latest gate passed and whose agent has finished is `awaiting merge`: it counts toward disk but not the cap, and the reason lists it apart from the running builders; a later gate failure (sent back) makes it running again.
 
 After each successful start, record it: `factory-state assign --ticket <n> --spec <s> --role <role> --model <model> --effort <effort> --branch <branch>`, then `factory-state update --ticket <n> --agent <agentId>`.
 
