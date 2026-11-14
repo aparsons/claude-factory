@@ -1,8 +1,8 @@
 {
   "ledger": {
-    "events": 10,
-    "first_ts": "2026-03-01T08:00:00Z",
-    "last_ts": "2026-03-01T09:31:00Z"
+    "events": 7,
+    "first_ts": "2026-04-01T09:00:00Z",
+    "last_ts": "2026-04-01T10:00:00Z"
   },
   "flow": {
     "tickets_merged_per_day": null,
@@ -12,32 +12,35 @@
     "stalls": 0
   },
   "quality": {
-    "first_try_gate_pass_rate": 0.5,
+    "first_try_gate_pass_rate": 0.33,
     "rework_by_ticket": [
       {
         "ticket": 7,
-        "spec": 2,
-        "gate_failures": 1,
+        "failed_gates": 0,
+        "review_send_backs": 0,
         "escalations": 0,
-        "reworks": 1,
-        "rework": 1,
-        "first_try": false
+        "total": 0
       },
       {
         "ticket": 8,
-        "spec": 2,
-        "gate_failures": 0,
+        "failed_gates": 1,
+        "review_send_backs": 0,
         "escalations": 0,
-        "reworks": 0,
-        "rework": 0,
-        "first_try": true
+        "total": 1
+      },
+      {
+        "ticket": 9,
+        "failed_gates": 0,
+        "review_send_backs": 1,
+        "escalations": 1,
+        "total": 2
       }
     ],
     "rework_runs": null,
-    "escalations": 0,
+    "escalations": 1,
     "ci_pass_rate": null,
     "ci_median_duration_s": null,
-    "tests_added": 6,
+    "tests_added": 10,
     "review_findings_per_ticket": null
   },
   "cost": {

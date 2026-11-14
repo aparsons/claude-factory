@@ -16,12 +16,10 @@
     "rework_by_ticket": [
       {
         "ticket": 5,
-        "spec": null,
-        "gate_failures": 2,
+        "failed_gates": 2,
+        "review_send_backs": 0,
         "escalations": 1,
-        "reworks": 0,
-        "rework": 3,
-        "first_try": false
+        "total": 3
       }
     ],
     "rework_runs": 2,

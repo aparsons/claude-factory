@@ -30,8 +30,16 @@ case_ missing-ledger --ledger "$tmp/does-not-exist.jsonl"
 case_ one-spec --ledger "$fx/one-spec.jsonl" --git-log "$fx/one-spec.gitlog" --runs "$fx/one-spec.runs.json" --usage "$fx/one-spec.usage.json"
 case_ escalation --ledger "$fx/escalation.jsonl"
 case_ mixed --ledger "$fx/mixed.jsonl"
-# merged, reworked and merged again (ticket 7: not first-try, one rework), pass only (ticket 8)
-case_ rework --ledger "$fx/rework.jsonl"
+# A ticket is first-try only if no gate failure was ever recorded for it, whatever came before or after.
+case_ gate-pass-only --ledger "$fx/gate-pass-only.jsonl"
+case_ gate-fail-then-pass --ledger "$fx/gate-fail-then-pass.jsonl"
+case_ gate-pass-fail-pass --ledger "$fx/gate-pass-fail-pass.jsonl"
+case_ gate-sequences --ledger "$fx/gate-sequences.jsonl"
+
+# Explicit rule check (not only goldens): first-try rate and rework per ticket for pass-fail-pass.
+got=$("$kpis" --json --ledger "$fx/gate-pass-fail-pass.jsonl" | jq -c '[.quality.first_try_gate_pass_rate, .quality.rework_by_ticket[0].review_send_backs]')
+count=$((count + 1))
+[ "$got" = "[0,1]" ] || { echo "FAIL: pass-fail-pass gave $got, want [0,1]"; fail=1; }
 
 # Cost is the range of the prices file: one Sonnet 5.5 run of 1M input tokens costs $2 at both ends.
 printf '%s\n' '{"ts":"2026-01-01T00:00:00Z","event":"agent_stop","agent_id":"x","role":"other","model":"claude-sonnet-5-5-20260101","ticket":null,"tokens":{"input":1000000,"output":null,"cache_read":null,"cache_creation":null}}' >"$tmp/one.jsonl"

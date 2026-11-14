@@ -1,6 +1,6 @@
 # Factory KPIs
 
-Ledger: 10 events, 2026-03-01T08:00:00Z to 2026-03-01T09:31:00Z.
+Ledger: 1 events, 2026-04-01T09:00:00Z to 2026-04-01T09:00:00Z.
 
 ## Flow
 
@@ -16,20 +16,19 @@ Ledger: 10 events, 2026-03-01T08:00:00Z to 2026-03-01T09:31:00Z.
 
 | KPI | Value |
 | --- | --- |
-| First-try gate pass rate | 50% |
+| First-try gate pass rate | 100% |
 | Rework (extra builder runs) | n/a |
 | Escalations | 0 |
 | CI pass rate | n/a |
 | CI duration (median) | n/a |
-| Tests added | 6 |
+| Tests added | 3 |
 | Review findings per ticket | n/a |
 
 ### Rework per ticket
 
-| Ticket | Failed gates | Escalations | Reworks after merge | First try |
+| Ticket | Failed gates | Review send-backs | Escalations | Total |
 | --- | --- | --- | --- | --- |
-| #7 | 1 | 0 | 1 | no |
-| #8 | 0 | 0 | 0 | yes |
+| #7 | 0 | 0 | 0 | 0 |
 
 ## Cost
 

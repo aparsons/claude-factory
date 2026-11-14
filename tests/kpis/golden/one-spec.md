@@ -26,10 +26,10 @@ Ledger: 15 events, 2026-01-01T10:00:00Z to 2026-01-01T12:05:00Z.
 
 ### Rework per ticket
 
-| Ticket | Failed gates | Escalations | Reworks after merge | First try |
+| Ticket | Failed gates | Review send-backs | Escalations | Total |
 | --- | --- | --- | --- | --- |
-| #3 | 0 | 0 | 0 | yes |
-| #4 | 1 | 0 | 0 | no |
+| #3 | 0 | 0 | 0 | 0 |
+| #4 | 1 | 0 | 0 | 1 |
 
 ## Cost
 

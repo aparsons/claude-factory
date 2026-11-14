@@ -224,9 +224,9 @@ jq -s -e --arg a "$first" --arg b "$second" '[.[] | select(.ticket == 12 and (.e
     == [["merge", null, $a, null], ["gate", "pass", null, null], ["gate", "fail", null, "macOS CI failed"], ["rework", null, null, "macOS CI failed"], ["merge", null, $b, null]]' "$led" >/dev/null ||
   fail "ledger: merge, gate pass, gate fail, rework, merge: $(jq -c 'select(.ticket == 12) | [.event, .result, .commit, .reason]' "$led")"; ok
 "$root/plugins/factory/bin/factory-kpis" --json --ledger "$led" | jq -e '.quality | (.first_try_gate_pass_rate == 0)
-    and (.rework_by_ticket | map(select(.ticket == 12)) == [{ticket: 12, spec: 3, gate_failures: 1, escalations: 0, reworks: 1, rework: 1, first_try: false}])' >/dev/null ||
+    and (.rework_by_ticket | map(select(.ticket == 12)) == [{ticket: 12, failed_gates: 0, review_send_backs: 1, escalations: 0, total: 1}])' >/dev/null ||
   fail "kpis: ticket 12 is not first-try and its rework is counted: $("$root/plugins/factory/bin/factory-kpis" --json --ledger "$led" | jq -c .quality)"; ok
-"$root/plugins/factory/bin/factory-kpis" --ledger "$led" | grep -qE '^\| #12 \| 1 \| 0 \| 1 \| no \|' || fail "kpis table: the rework row for #12"; ok
+"$root/plugins/factory/bin/factory-kpis" --ledger "$led" | grep -qE '^\| #12 \| 0 \| 1 \| 0 \| 1 \|' || fail "kpis table: the rework row for #12"; ok
 
 # --- diverged: the local integration branch and origin both moved ---
 git clone -q -b spec/3-parser "$tmp/origin.git" "$tmp/other"

@@ -1,6 +1,9 @@
 # Computes the KPI object from the ledger (stdin, raw text, JSON lines).
 # Arguments: $prices, $runs (gh run list JSON or null), $usage (usage.json or null),
 #            $merges (array of {ts, subject} from a git log, or null), $health ({root_kb, tmp_kb}).
+# First-try: a ticket is first-try only if no gate event with result fail exists for it, whatever came before or after.
+# Rework per ticket: failed_gates (failures before the ticket's first pass), review_send_backs (failures after a pass),
+# escalations. The ledger itself is never rewritten.
 # A KPI that cannot be computed from what is recorded is null (printed as n/a), never 0.
 
 def ts2s:
@@ -45,12 +48,16 @@ def types: ["input", "output", "cache_read", "cache_creation"];
     | ([$merged[] | select(.ticket == $t) | .s] | min) as $m
     | select($first != null and $m >= $first) | $m - $first]) as $leads
 | ([$ev[] | select(.event == "gate" and .ticket != null)] | sort_by(.ts) | group_by(.ticket)) as $gates
-| ([$gates[] | .[0].ticket as $t | {
-    ticket: $t, spec: $specof[$t | tostring],
-    gate_failures: ([.[] | select(.result == "fail")] | length),
-    escalations: ([$ev[] | select(.event == "escalation" and .ticket == $t)] | length),
-    reworks: ([$ev[] | select(.event == "rework" and .ticket == $t)] | length)}
-    | . + {rework: (.gate_failures + .escalations), first_try: (.gate_failures == 0)}]) as $by_gate
+| ([$ev[] | select(.event == "escalation" and .ticket != null)]) as $escs
+| ([$gates[] | .[0].ticket] + [$escs[] | .ticket] | unique) as $rework_tickets
+| ([$rework_tickets[] | . as $t
+    | ([$gates[] | select(.[0].ticket == $t)] | first // []) as $g
+    | ([$g | to_entries[] | select(.value.result == "pass") | .key] | min) as $firstpass
+    | ([$g | to_entries[] | select(.value.result == "fail") | .key] | map(select($firstpass != null and . > $firstpass)) | length) as $sent_back
+    | ([$g[] | select(.result == "fail")] | length) as $failed
+    | {ticket: $t, failed_gates: ($failed - $sent_back), review_send_backs: $sent_back,
+       escalations: ([$escs[] | select(.ticket == $t)] | length)}
+    | . + {total: (.failed_gates + .review_send_backs + .escalations)}]) as $rework
 | ([$stops[] | select(.ticket != null and (.role == "implementer" or .role == "implementer-deep"))] | group_by(.ticket)) as $builds
 | ([($runs // [])[] | select(.conclusion == "success" or .conclusion == "failure")]) as $ci
 | ([$ci[] | select(.startedAt != null and .updatedAt != null) | (.updatedAt | ts2s) - (.startedAt | ts2s)]) as $ci_dur
@@ -74,8 +81,8 @@ def types: ["input", "output", "cache_read", "cache_creation"];
     active_agents: (if $recorded then [$started[] | select(. as $a | $stopped | index($a) | not)] | length else null end),
     stalls: (if $recorded then [$ev[] | select(.event == "stall")] | length else null end)},
   quality: {
-    first_try_gate_pass_rate: (rate([$by_gate[] | select(.first_try)] | length; $by_gate | length) | round2),
-    rework_by_ticket: (if ($by_gate | length) == 0 then null else $by_gate end),
+    first_try_gate_pass_rate: (rate([$gates[] | select(all(.[]; .result != "fail"))] | length; $gates | length) | round2),
+    rework_by_ticket: (if ($rework | length) == 0 then null else $rework end),
     rework_runs: (if ($builds | length) == 0 then null else [$builds[] | length - 1] | add end),
     escalations: (if $recorded then [$ev[] | select(.event == "escalation")] | length else null end),
     ci_pass_rate: (rate([$ci[] | select(.conclusion == "success")] | length; $ci | length) | round2),
