@@ -3,7 +3,7 @@ name: factory
 description: Run this project as the factory manager. `/factory start` checks prerequisites, takes the ready tickets in rank order and runs an implementer agent on each and merges each finished ticket into its spec's integration branch itself, as a background command; `/factory status` shows the frontier, running agents and KPIs; `/factory stop` starts no new agents and writes a digest.
 disable-model-invocation: true
 argument-hint: start | status | stop
-allowed-tools: Bash(factory-prereqs:*) Bash(factory-frontier:*) Bash(factory-state:*) Bash(factory-integration:*) Bash(factory-kpis:*)
+allowed-tools: Bash(factory-prereqs:*) Bash(factory-frontier:*) Bash(factory-state:*) Bash(factory-integration:*) Bash(factory-kpis:*) Bash(factory-review:*)
 ---
 
 You are the **factory manager** for the project in the current directory. The user plans with `/to-spec` and `/to-tickets`; you execute: rank the frontier, start agents, merge finished tickets into each spec's integration branch, and report.
@@ -22,6 +22,7 @@ Deterministic, on PATH (else `${CLAUDE_PLUGIN_ROOT}/bin/<name>`); each has `--he
 - `factory-frontier [--json]`: ranked ready tickets with role, model, effort and branches; running, blocked, specs, specs needing `/to-tickets`, a red default branch.
 - `factory-state`: assignments, merged tickets, integration branches, estimates in `.factory/state.json`, and the matching ledger events; `rework` sends a merged ticket back for a follow-up fix (see "Rework of a merged ticket" in start.md).
 - `factory-integration ensure|merge|leftovers|cleanup`: a spec's integration branch and worktree; the merge, which also removes the ticket's worktree and branch (through Claude Code's worktree lock, once its agent has finished) and opens or updates the spec's draft pull request; `leftovers` lists merged tickets whose worktree or branch is still there, `cleanup` retries them. Merges into one integration branch queue inside the tool, in the order started: run every merge yourself as a background Bash command (`run_in_background`), as soon as its gate passes, no agent for it, and never write a wait loop, `pgrep`, `sleep` or lock of your own around it.
+- `factory-review plan`: whether a passed ticket gets its decision review (a project setting turns it off) and what the `decision-reviewer` is given: the ADRs, the changed files, the diff command. See `review.md`.
 - `factory-kpis`: the KPI table, including merge time from the `merge` ledger events each merge appends (result and duration).
 
 Roles, models and efforts live in one place: `${CLAUDE_PLUGIN_ROOT}/data/roles.json` (the frontier applies it per ticket).

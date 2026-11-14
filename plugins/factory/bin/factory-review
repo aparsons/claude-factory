@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016 # jq programs are single-quoted on purpose
+# factory-review: plans a ticket's decision review (the step between a passing check and the merge).
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: factory-review plan --ticket N --worktree DIR --base REF [--project DIR]
+
+Plans the decision review of a ticket whose check passed: whether it runs, and what the
+decision-reviewer gets. Read-only; prints JSON:
+  {ticket, enabled, reason, base, worktree, adrs, changed_files, diff_command}
+  enabled        false when .factory/settings.json has "decision_review": false (the review is
+                 skipped and the ticket goes straight to the merge); true otherwise
+  reason         why it is off, else null
+  adrs           the project's ADRs in the worktree (docs/adr/*.md), relative paths; empty for a
+                 project without ADRs (the ticket's acceptance criteria are still reviewed)
+  changed_files  the files the ticket changed against REF (the integration branch)
+  diff_command   the command that prints the ticket's diff against REF
+Exit 0 on a plan, 2 on a usage error (missing option, unknown base, missing worktree).
+USAGE
+}
+
+root=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+# shellcheck disable=SC1091 # lib/common.sh, checked on its own
+. "$root/lib/common.sh"
+
+die() { echo "factory-review: $*" >&2; exit 2; }
+cmd="" ticket="" worktree="" base="" project=""
+case "${1:-}" in
+  plan) cmd=plan; shift ;;
+  -h | --help) usage; exit 0 ;;
+  *) usage >&2; die "expected the command: plan" ;;
+esac
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --ticket) ticket=${2:?}; shift ;;
+    --worktree) worktree=${2:?}; shift ;;
+    --base) base=${2:?}; shift ;;
+    --project) project=${2:?}; shift ;;
+    -h | --help) usage; exit 0 ;;
+    *) die "unknown argument $1" ;;
+  esac
+  shift
+done
+[ "$cmd" = plan ] || die "expected the command: plan"
+[[ "$ticket" =~ ^[0-9]+$ ]] || die "plan needs --ticket N (a number)"
+[ -n "$worktree" ] || die "plan needs --worktree DIR"
+[ -n "$base" ] || die "plan needs --base REF (the integration branch)"
+[ -d "$worktree" ] || die "no worktree at $worktree"
+worktree=$(cd "$worktree" && pwd)
+[ -n "$project" ] || project=$(factory_project)
+
+reason=null enabled=true
+if [ "$(factory_settings "$project" | jq -r 'if .decision_review == false then "off" else "on" end')" = off ]; then
+  enabled=false reason='"decision_review is false in .factory/settings.json"'
+fi
+
+if [ "$enabled" = false ]; then
+  jq -nc --argjson t "$ticket" --argjson r "$reason" --arg b "$base" --arg w "$worktree" \
+    '{ticket: $t, enabled: false, reason: $r, base: $b, worktree: $w, adrs: [], changed_files: [], diff_command: null}'
+  exit 0
+fi
+
+git -C "$worktree" rev-parse -q --verify "$base^{commit}" >/dev/null 2>&1 || die "unknown base $base in $worktree"
+adrs=$(cd "$worktree" && { for f in docs/adr/*.md; do if [ -f "$f" ]; then echo "$f"; fi; done; } | LC_ALL=C sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
+changed=$(git -C "$worktree" diff --name-only "$base...HEAD" | LC_ALL=C sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
+jq -nc --argjson t "$ticket" --argjson r "$reason" --arg b "$base" --arg w "$worktree" \
+  --argjson adrs "$adrs" --argjson changed "$changed" \
+  '{ticket: $t, enabled: true, reason: $r, base: $b, worktree: $w, adrs: $adrs, changed_files: $changed,
+    diff_command: "git -C \($w | @sh) diff \(if $b | test("^[A-Za-z0-9._/-]+$") then $b else ($b | @sh) end)...HEAD"}'
