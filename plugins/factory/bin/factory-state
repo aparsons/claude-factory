@@ -33,6 +33,9 @@ Usage: factory-state <command> [options]
                                rework {ticket, spec, reason, role, model, effort, branch}
   gate --ticket N --result pass|fail [--tests-added K]
                                ledger only: gate {ticket, spec, result, tests_added}
+  ci --ticket N --result green|failed|red-on-default|infra|timeout|none --duration-s S [--commit SHA] [--reason TEXT]
+                               ledger only: ci {ticket, spec, commit, result, duration_s, reason}; the CI
+                               on a merged commit: green and failed feed the CI pass rate and duration KPIs
   integration --spec S --branch B [--worktree P] [--status active|complete]
                                record a spec's integration branch
   estimate --spec S --usd X    record a spec's cost estimate (the first one is kept as first)
@@ -240,6 +243,15 @@ gate)
   event '{event: "gate", ticket: ($t | tonumber), spec: (if $s == "" then null else ($s | tonumber) end), result: $r,
       tests_added: (if $k == "" then null else ($k | tonumber) end)}' \
     --arg t "$ticket" --arg s "$spec" --arg r "$result" --arg k "$tests_added"
+  ;;
+ci)
+  need_num --ticket "$ticket"
+  need_num --duration-s "$duration"
+  case "$result" in green | failed | red-on-default | infra | timeout | none) ;; *) die "ci needs --result green, failed, red-on-default, infra, timeout or none" ;; esac
+  spec=$(current | jq -r --arg t "$ticket" '(.assignments[$t] // .merged[$t] // {}).spec // empty')
+  event '{event: "ci", ticket: ($t | tonumber), spec: (if $s == "" then null else ($s | tonumber) end),
+      commit: (if $c == "" then null else $c end), result: $r, duration_s: ($d | tonumber), reason: (if $why == "" then null else $why end)}' \
+    --arg t "$ticket" --arg s "$spec" --arg c "$commit" --arg r "$result" --arg d "$duration" --arg why "$reason"
   ;;
 integration)
   need_num --spec "$spec"
