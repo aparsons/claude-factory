@@ -21,7 +21,7 @@ Deterministic, on PATH (else `${CLAUDE_PLUGIN_ROOT}/bin/<name>`); each has `--he
 - `factory-prereqs [--json]`: what the project lacks; prints the check command.
 - `factory-frontier [--json]`: ranked ready tickets with role, model, effort and branches; running, blocked, specs, specs needing `/to-tickets`, a red default branch.
 - `factory-state`: assignments, merged tickets, integration branches, estimates in `.factory/state.json`, and the matching ledger events.
-- `factory-integration ensure|merge`: a spec's integration branch and worktree; the merger's merge.
+- `factory-integration ensure|merge`: a spec's integration branch and worktree; the merger's merge. Merges into one integration branch queue inside the tool, in the order started: start every merge directly, as soon as its gate passes, and never write a wait loop, `pgrep`, `sleep` or lock of your own around it.
 - `factory-kpis`: the KPI table.
 
 Roles, models and efforts live in one place: `${CLAUDE_PLUGIN_ROOT}/data/roles.json` (the frontier applies it per ticket).
