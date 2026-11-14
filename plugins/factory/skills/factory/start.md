@@ -2,7 +2,7 @@
 
 ## 1. Prerequisites
 
-Run `factory-prereqs`. If it exits non-zero, show its list and stop: the factory does not run half-configured. Otherwise keep its check command for the briefs, and run `factory-state running on`.
+Run `factory-prereqs`. If it exits non-zero, show its list and stop: the factory does not run half-configured. Otherwise keep its check command for the briefs, and run `factory-state running on`. Then start the rhythm in `wake.md`: run `factory-rhythm next` at the end of step 5 (once the first builders are started) and schedule the heartbeat it names.
 
 ## 1a. Resume a previous session
 
@@ -91,20 +91,29 @@ Read the JSON it relays from `factory-integration merge`:
 - `push-failed`: the pre-push check failed on the merged result. Record `factory-state gate --ticket <n> --result fail` and follow its `next` as in step 6, sending the output to the implementer on `retry`.
 - `diverged`: someone else moved the integration branch. Stop that spec and ask the user.
 
+## Monitor lines
+
+The `factory-watch` monitor starts with this skill and prints one line only when a condition starts (it is silent while `factory-state running` is off). Each line wakes you; act, or report in one line. Never poll for these yourself.
+
+- `disk` or `temp` (`factory-watch: disk: ...`, `... temp: ...`): start no builder until it clears (the spawn gate refuses anyway). Remove worktrees the factory created that are merged or empty (the lines of the gate's list), clean leaked directories under `${TMPDIR:-/tmp}` that a factory agent made; anything else is the user's: ask. If it does not clear, report it and wait.
+- `ci` (a run past three times its workflow's median): look at the run with a `factory:watcher` (`gh run view <id>`). A hung run: cancel it and re-run it once (re-running CI is not an outward step); if the failure repeats, report the log. A run that is only slow: say so in one line.
+- `stall` (a worktree with no progress for the stall time): the builder stalled. Follow **Stalls** above for its ticket (the branch `t<n>-...` names it). A worktree with no assignment is the user's: report it.
+- `merged` (a merged worktree not removed): the merger or an escalation left it. Run `git worktree remove <path>` for one the factory created (the branch stays, or is deleted by `git branch -d` when merged); otherwise ask.
+
 ## 8. Continue
 
 After every merge, recompute the frontier (`factory-frontier --json`) and go back to step 3 for newly ready tickets (the budgets of step 4 apply again). Check CI as step 9 says.
 
 When a spec's status is `complete`: run `factory-state integration --spec <s> --branch <branch> --status complete` and say "Spec #<s>: all tickets merged into <branch>." (for a `standalone` entry: "Ticket #<s>: merged into <branch>."). Start no more tickets for it; follow `${CLAUDE_PLUGIN_ROOT}/skills/factory/finish.md` (review, one fixer, spec report, draft pull request, then ask). A standalone ticket goes through the same steps: its draft pull request is from `ticket/<n>-<slug>` to the default branch and closes that one issue. Marking a pull request ready and merging it are outward steps.
 
-When nothing is ready and nothing is running, go idle: say in a few lines what waits on the user (specs needing `/to-tickets`, blocked specs and why, failures left for them) and stop working until they reply.
+When nothing is ready and nothing is running, go idle as in `wake.md` (`factory-rhythm next` says `idle`): say in a few lines what waits on the user (`waiting_on_user`: specs needing `/to-tickets`, blocked specs and why, failures left for them), schedule no heartbeat, and stop working until they reply.
 
 ## 9. CI
 
 After a merger pushes an integration branch, after a draft pull request is opened, and at each wake-up while a branch of the factory has CI pending, run `factory-ci check --branch <branch>`. It looks at the latest run of each workflow and decides; never run `gh run rerun` yourself.
 
-- A run with `rerun_started: true` failed for an infrastructure reason (the runner was lost, a network or service error, cancelled, did not start). The tool re-ran it, once; GitHub counts the attempts, so a restarted session does not re-run it again. One line: `CI re-run: <workflow> <url> (<reason>)`. Nothing to ask.
-- Exit 3: each run with `action` `report` is a failure to tell the user: a real failure (a step failed, or the run timed out: a hang is not infrastructure), or an infrastructure error again after its re-run. One line, `CI red: <workflow> <url>: <reason>`, then its `log_lines` verbatim. Offer one fixer builder (the "Fixer" brief, `log_lines` as the findings); start it only when the user agrees.
+- A run with `rerun_started: true` failed for an infrastructure reason (the runner was lost, a network or service error, cancelled, did not start). The tool re-ran it, once; GitHub counts the attempts, so a restarted session does not re-run it again. One line in the session (no note, no push): `CI re-run: <workflow> <url> (<reason>)`. Nothing to ask.
+- Exit 3: each run with `action` `report` is a failure to tell the user: a real failure (a step failed, or the run timed out: a hang is not infrastructure), or an infrastructure error again after its re-run. One line with `factory-rhythm note ci-red --text "<workflow> <url>: <reason>"`, then its `log_lines` verbatim. Offer one fixer builder (the "Fixer" brief, `log_lines` as the findings); start it only when the user agrees.
 - `pending` above 0: nothing to say yet; check again at the next wake-up (a completion, a heartbeat), never by polling. A `watcher` agent (`gh run watch`) may wait for one run, but its report is facts only: the decisions are the tool's.
 
 `factory-ci check --dry-run` decides without starting anything.
