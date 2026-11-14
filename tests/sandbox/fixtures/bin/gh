@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# A fake gh for the sandbox suite: no network, state in $FAKE_GH_DIR. It records every call in
+# calls.log, keeps issues as files, and returns canned output for `issue view` and `pr list`
+# from issue-view.json and pr-list.json when the test has written them.
+set -euo pipefail
+d=${FAKE_GH_DIR:?FAKE_GH_DIR is not set}
+mkdir -p "$d/issues" "$d/remote"
+printf '%s\n' "$*" >>"$d/calls.log"
+
+case "${1:-} ${2:-}" in
+  "auth status") exit 0 ;;
+  "api user") echo "${FAKE_GH_USER:-fake-user}" ;;
+  "repo create")
+    name=${3##*/}
+    shift 3
+    src=""
+    while [ $# -gt 0 ]; do
+      case "$1" in --source) src=${2:?}; shift ;; esac
+      shift
+    done
+    git init -q --bare -b main "$d/remote/$name.git"
+    git -C "$src" remote add origin "$d/remote/$name.git"
+    git -C "$src" push -q -u origin main
+    ;;
+  "repo view") echo '{"defaultBranchRef":{"name":"main"}}' ;;
+  "repo delete") ;;
+  "run list") echo '[]' ;;
+  "label create") printf '%s\n' "$3" >>"$d/labels" ;;
+  "label list") cat "$d/labels" ;;
+  "issue create")
+    shift 2
+    title="" bodyfile="" labels="" parent="" blocked=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --title) title=${2:?} ;;
+        --body-file) bodyfile=${2:?} ;;
+        --label) labels="$labels,${2:?}" ;;
+        --parent) parent=${2:?} ;;
+        --blocked-by) blocked=${2:?} ;;
+        *) echo "fake gh: unexpected issue create flag $1" >&2; exit 1 ;;
+      esac
+      shift 2
+    done
+    n=$(($(cat "$d/next" 2>/dev/null || echo 0) + 1))
+    echo "$n" >"$d/next"
+    jq -n --argjson n "$n" --arg title "$title" --rawfile body "$bodyfile" --arg labels "${labels#,}" \
+      --arg parent "$parent" --arg blocked "$blocked" '{
+        number: $n, title: $title, body: $body,
+        labels: ($labels | split(",") | map(select(. != ""))),
+        parent: (if $parent == "" then null else ($parent | tonumber) end),
+        blocked: ($blocked | split(",") | map(select(. != "") | tonumber))}' >"$d/issues/$n.json"
+    echo "https://github.com/${FAKE_GH_USER:-fake-user}/fake-repo/issues/$n"
+    ;;
+  "issue list")
+    jq -s '. as $all | map(. as $i | {
+        number, title, body, state: "OPEN",
+        createdAt: "2026-01-01T00:00:\(if .number < 10 then "0" else "" end)\(.number)Z",
+        labels: [.labels[] | {name: .}], milestone: null, assignees: [],
+        parent: (if .parent then {number: .parent, state: "OPEN", title: "", url: ""} else null end),
+        blockedBy: {nodes: [.blocked[] | {number: ., state: "OPEN"}], totalCount: (.blocked | length)},
+        blocking: ([$all[] | select(.blocked | index($i.number)) | {number, state: "OPEN"}] | {nodes: ., totalCount: length}),
+        subIssues: ([$all[] | select(.parent == $i.number) | {number, title, state: "OPEN"}] | {nodes: ., totalCount: length}),
+        subIssuesSummary: {total: ([$all[] | select(.parent == $i.number)] | length), completed: 0, percentCompleted: 0}})' \
+      "$d"/issues/*.json
+    ;;
+  "issue view") cat "$d/issue-view.json" ;;
+  "pr list") cat "$d/pr-list.json" ;;
+  *) echo "fake gh: unexpected call: $*" >&2; exit 1 ;;
+esac
