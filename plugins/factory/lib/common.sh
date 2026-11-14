@@ -57,3 +57,23 @@ factory_exclude() {
     grep -qxF -- "$path" "$ex" 2>/dev/null || printf '%s\n' "$path" >>"$ex"
   done
 }
+
+# factory_check_command <project>: the project's check command: check_command from
+# .factory/settings.json, else the first code span on a line of CLAUDE.md about checks or
+# tests that looks like a command. Empty when none is named.
+# shellcheck disable=SC2016 # the grep patterns are single-quoted on purpose
+factory_check_command() {
+  local project=$1 cc="" md="" f
+  cc=$(factory_settings "$project" | jq -r '.check_command // empty')
+  if [ -z "$cc" ]; then
+    for f in "$project/CLAUDE.md" "$project/.claude/CLAUDE.md"; do
+      if [ -f "$f" ]; then md=$f; break; fi
+    done
+    if [ -n "$md" ]; then
+      cc=$(grep -iE 'check|test|\bCI\b' "$md" | grep -oE '`[^`]+`' | tr -d '`' |
+        grep -E '^(\./|scripts/|bin/|tools/)|\.sh( |$)|^(make|just|npm|pnpm|yarn|bun|deno|cargo|go|pytest|tox|nox|uv|poetry|mvn|gradle|\./gradlew|dotnet|bazel|mix|bundle|rake)( |$)' |
+        head -n 1 || true)
+    fi
+  fi
+  printf '%s\n' "$cc"
+}
