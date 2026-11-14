@@ -60,7 +60,7 @@ record() {
     | {rate_limits: ((($old[0].rate_limits // {}) + $w)), recorded_at: $now}' <<<"$input") || return 0
   [ -n "$new" ] || return 0
   tmp=$(mktemp "$project/.factory/.usage.XXXXXX") || return 0
-  printf '%s\n' "$new" >"$tmp" && mv -f "$tmp" "$file" || rm -f "$tmp"
+  if printf '%s\n' "$new" >"$tmp"; then mv -f "$tmp" "$file"; else rm -f "$tmp"; fi
 }
 record 2>/dev/null || true
 
