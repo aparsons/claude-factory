@@ -1,0 +1,7 @@
+{"ts":"2026-04-01T09:00:00Z","event":"gate","ticket":7,"result":"pass","tests_added":3}
+{"ts":"2026-04-01T09:00:00Z","event":"gate","ticket":8,"result":"fail","tests_added":1}
+{"ts":"2026-04-01T09:00:00Z","event":"gate","ticket":9,"result":"pass","tests_added":3}
+{"ts":"2026-04-01T09:20:00Z","event":"gate","ticket":9,"result":"fail"}
+{"ts":"2026-04-01T09:30:00Z","event":"gate","ticket":8,"result":"pass","tests_added":2}
+{"ts":"2026-04-01T09:50:00Z","event":"gate","ticket":9,"result":"pass","tests_added":1}
+{"ts":"2026-04-01T10:00:00Z","event":"escalation","ticket":9,"from":"implementer","to":"implementer-deep","reason":"stalled"}

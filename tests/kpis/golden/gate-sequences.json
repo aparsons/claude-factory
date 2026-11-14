@@ -1,0 +1,70 @@
+{
+  "ledger": {
+    "events": 7,
+    "first_ts": "2026-04-01T09:00:00Z",
+    "last_ts": "2026-04-01T10:00:00Z"
+  },
+  "flow": {
+    "tickets_merged_per_day": null,
+    "lead_time_median_s": null,
+    "frontier_size": null,
+    "active_agents": 0,
+    "stalls": 0
+  },
+  "quality": {
+    "first_try_gate_pass_rate": 0.33,
+    "rework_by_ticket": [
+      {
+        "ticket": 7,
+        "failed_gates": 0,
+        "review_send_backs": 0,
+        "escalations": 0,
+        "total": 0
+      },
+      {
+        "ticket": 8,
+        "failed_gates": 1,
+        "review_send_backs": 0,
+        "escalations": 0,
+        "total": 1
+      },
+      {
+        "ticket": 9,
+        "failed_gates": 0,
+        "review_send_backs": 1,
+        "escalations": 1,
+        "total": 2
+      }
+    ],
+    "rework_runs": null,
+    "escalations": 1,
+    "ci_pass_rate": null,
+    "ci_median_duration_s": null,
+    "tests_added": 10,
+    "review_findings_per_ticket": null
+  },
+  "cost": {
+    "runs": 0,
+    "tokens": null,
+    "cache_read_share": null,
+    "usd_low": null,
+    "usd_high": null,
+    "unpriced_runs": 0,
+    "by_ticket": [],
+    "by_spec": null,
+    "plan_usage": {
+      "five_hour_pct": null,
+      "five_hour_resets_at": null,
+      "seven_day_pct": null,
+      "seven_day_resets_at": null
+    },
+    "prices": {
+      "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+      "retrieved": "2026-11-12"
+    }
+  },
+  "health": {
+    "free_root_gb": 10,
+    "free_tmp_gb": 2
+  }
+}

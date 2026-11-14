@@ -24,6 +24,8 @@ Ledger: 0 events.
 | Tests added | n/a |
 | Review findings per ticket | n/a |
 
+Rework per ticket: n/a
+
 ## Cost
 
 | KPI | Value |

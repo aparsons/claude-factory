@@ -24,6 +24,8 @@ Ledger: 8 events, 2026-03-01T00:00:00Z to 2026-03-01T00:22:00Z.
 | Tests added | n/a |
 | Review findings per ticket | n/a |
 
+Rework per ticket: n/a
+
 ## Cost
 
 | KPI | Value |

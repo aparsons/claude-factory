@@ -13,6 +13,7 @@
   },
   "quality": {
     "first_try_gate_pass_rate": null,
+    "rework_by_ticket": null,
     "rework_runs": null,
     "escalations": null,
     "ci_pass_rate": null,
