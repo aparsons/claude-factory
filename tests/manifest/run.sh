@@ -13,4 +13,7 @@ wired SubagentStop hooks/build-clean.sh || { echo "build-clean is not wired to S
 for h in factory-rules build-clean; do
   [ -x "$root/plugins/factory/hooks/$h.sh" ] || { echo "hooks/$h.sh is not executable"; exit 1; }
 done
+monitors="$root/plugins/factory/monitors/monitors.json"
+jq -e '[.[] | select(.name == "factory-watch" and (.command | endswith("bin/factory-watch\"")) and (.when | startswith("on-skill-invoke:")))] | length == 1' "$monitors" >/dev/null || { echo "factory-watch is not registered as a monitor"; exit 1; }
+[ -x "$root/plugins/factory/bin/factory-watch" ] || { echo "bin/factory-watch is not executable"; exit 1; }
 echo "manifest suite passed"

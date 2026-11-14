@@ -25,6 +25,7 @@ Deterministic, on PATH (else `${CLAUDE_PLUGIN_ROOT}/bin/<name>`); each has `--he
 - `factory-integration ensure|merge`: a spec's integration branch and worktree; the merger's merge.
 - `factory-kpis`: the KPI table.
 - `factory-roles [next <role>]`: the role table; the tier above a role.
+- `factory-watch`: the monitor that starts with this skill; one line per new condition (low disk or temporary space, a CI run past three times its median, a stalled worktree, a merged worktree not removed). It is not run by hand. What to do with each line: `start.md`, Monitor lines.
 - `factory-spec-report write|closes`: a spec's report for `docs/factory/reports/`, and the `Closes #n` lines its pull request must carry (it checks the body).
 
 Every agent you start is a role: `subagent_type` `factory:<role>`. Its model, effort, tools and isolation live only in its agent definition (`${CLAUDE_PLUGIN_ROOT}/agents/<role>.md`); `factory-roles` prints them and the frontier applies them per ticket. Roles: `implementer` (well-specified tickets), `implementer-deep` (security and foundational tickets, and escalations), `merger`, `standards-reviewer` and `spec-reviewer` (read-only), `watcher` (CI, housekeeping, lookups).
