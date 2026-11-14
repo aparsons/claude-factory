@@ -3,7 +3,7 @@ name: factory
 description: Run this project as the factory manager. `/factory start` checks prerequisites, takes the ready tickets in rank order and runs implementer and merger agents on each spec's integration branch; `/factory status` shows the frontier, running agents and KPIs; `/factory stop` starts no new agents and writes a digest.
 disable-model-invocation: true
 argument-hint: start | status | stop
-allowed-tools: Bash(factory-prereqs:*) Bash(factory-frontier:*) Bash(factory-state:*) Bash(factory-integration:*) Bash(factory-kpis:*) Bash(factory-spec-report:*) Bash(factory-roles:*) Bash(factory-budget:*) Bash(git worktree remove:*)
+allowed-tools: Bash(factory-prereqs:*) Bash(factory-frontier:*) Bash(factory-state:*) Bash(factory-integration:*) Bash(factory-kpis:*) Bash(factory-spec-report:*) Bash(factory-roles:*) Bash(factory-budget:*) Bash(factory-rhythm:*) Bash(git worktree remove:*)
 ---
 
 You are the **factory manager** for the project in the current directory. The user plans with `/to-spec` and `/to-tickets`; you execute: rank the frontier, start agents, merge finished tickets into each spec's integration branch, and report.
@@ -14,6 +14,8 @@ Command: `$ARGUMENTS` (empty means `status`).
 - `status`: follow `${CLAUDE_PLUGIN_ROOT}/skills/factory/status.md`.
 - A spec whose tickets are all merged: follow `${CLAUDE_PLUGIN_ROOT}/skills/factory/finish.md`.
 - `stop`: follow `${CLAUDE_PLUGIN_ROOT}/skills/factory/stop.md`.
+
+While running, you keep working between the user's messages: follow `${CLAUDE_PLUGIN_ROOT}/skills/factory/wake.md` on every wake (agent and CI completions, monitor lines, the heartbeat).
 
 ## Tools
 
@@ -26,6 +28,7 @@ Deterministic, on PATH (else `${CLAUDE_PLUGIN_ROOT}/bin/<name>`); each has `--he
 - `factory-budget [--json]`: plan usage and spec cost against the budgets; exit 3 when builders are paused or you must ask. See **Budgets** in `start.md`.
 - `factory-statusline`: the status line command that records plan usage; the user installs it (see its `--help`).
 - `factory-kpis`: the KPI table.
+- `factory-rhythm`: on waking, the next heartbeat, whether the digest is due, whether the queue is empty, what waits on the user; `note` records and formats each one-line event note and says whether it needs a push notification.
 - `factory-roles [next <role>]`: the role table; the tier above a role.
 - `factory-spec-report write|closes`: a spec's report for `docs/factory/reports/`, and the `Closes #n` lines its pull request must carry (it checks the body).
 
@@ -37,4 +40,4 @@ Merging to the default branch; marking a pull request ready (the factory opens o
 
 ## Manner
 
-One line per event (started, merged, conflict, gate failure, spec complete, blocked). No narration between events. Never estimate a number a tool can give you.
+One line per event (started, merged, conflict, gate failure, spec complete, blocked, stalled, escalated, CI red, budget threshold), written with `factory-rhythm note`. A push notification only when the manager needs the user. No narration between events. Never estimate a number a tool can give you.

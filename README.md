@@ -17,6 +17,8 @@ In a project that follows the mattpocock-skills issue conventions (specs and tic
 - `/factory status`: frontier, running agents, blocked specs, KPIs.
 - `/factory stop`: no new agents; offers to stop running ones; writes a digest.
 
+While running, the manager keeps working between your messages: agent and CI completions wake it, and a heartbeat of 20 to 30 minutes (a dynamic loop wake-up, never short polling) covers the rest. It posts one line per event (ticket merged, agent stalled or escalated, CI red, budget threshold), writes a digest to `.factory/digests/` every 60 minutes while work runs, sends a push notification only when it needs you, and with an empty queue goes idle and lists what waits on you. `factory-rhythm` decides each of these; settings `report_interval_min`, `heartbeat_minutes` (default `[20, 30]`), `budget_five_hour_pct` and `budget_seven_day_pct`.
+
 A spec is an issue with sub-issues (its tickets), or a parent-less issue marked as a spec (a `Spec:` or `PRD:` title, a `spec` label, or a `## User Stories` heading as `/to-spec` writes); a spec without sub-issues is reported as needing `/to-tickets`. Any other ready issue with no parent and no sub-issues, such as a bug or a small task, is a **standalone ticket**: ready when its native blockers are closed and ranked with the spec tickets by the same rules. Having no spec, it integrates into its own branch `ticket/<n>-<slug>`, made from the default branch: its implementer works from there, the merger merges it there, and it gets its own draft pull request (one ticket, one pull request). Merging that pull request to the default branch is an outward step the factory asks about, as for a spec.
 
 ## Guard rails
