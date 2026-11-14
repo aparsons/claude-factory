@@ -126,3 +126,10 @@ factory_role_file() {
   [ -f "$1/agents/$role.md" ] || return 1
   printf '%s\n' "$1/agents/$role.md"
 }
+
+# factory_ci_infra_re: the errors that mark a CI failure as infrastructure, not the code's, as they
+# appear in a log (extended regular expression, case-insensitive). Used by factory-ci and by
+# factory-integration ci, so both read a log the same way.
+factory_ci_infra_re() {
+  printf '%s\n' 'shutdown signal|lost communication with the server|received request to deprovision|runner .*(went offline|is offline|unreachable)|could not resolve host|temporary failure in name resolution|name or service not known|eai_again|connection reset by peer|connection timed out|tls handshake timeout|etimedout|econnreset|failed to connect to|rpc failed; curl|unexpected disconnect while reading sideband|early eof|returned error: 50[0-9]|http error 50[0-9]|(^|[^0-9])50[234] (bad gateway|service unavailable|gateway time)|service unavailable|bad gateway|unable to (download|resolve) action|failed to download action|an action could not be found at the uri|the operation was canceled'
+}

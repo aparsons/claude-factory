@@ -51,6 +51,25 @@ Usage:
       Retry the clean-up of every leftover (or of ticket N): the same rules as merge. Run it when an
       agent finishes. Prints [{ticket, spec, branch, worktree, worktree_removed, branch_deleted,
       remote_branch_deleted, worktree_lock, cleanup_note}].
+  factory-integration ci --ticket N [--sha S] [--timeout SECONDS]
+      After a merge: wait for the checks of the spec's pull request on the merged commit (default: the
+      ticket's merge commit, on its integration branch) to finish, polling every FACTORY_CI_POLL
+      seconds (default 30; --timeout default 3600; a commit with no checks started within
+      FACTORY_CI_GRACE seconds, default 180, has none). Run it in the background, like merge: the
+      manager is woken when it ends. The latest run of each workflow counts. Prints {ticket, spec, branch,
+      commit, result, duration_s, rework, rework_note?, failures: [{run, workflow, job, url, kind,
+      preexisting, lines}]} and appends a `ci` ledger event (result, duration: the checks' own, else
+      the wait). The result is one of:
+        green           exit 0  every check passed (or was skipped)
+        none            exit 0  no checks ran for the commit
+        failed          exit 3  a job failed that is not also failing on the default branch: a gate
+                                failure naming the job, its URL and the failed lines is recorded and the
+                                ticket goes back through `factory-state rework` (rework true)
+        red-on-default  exit 4  every failed job also fails on the default branch's latest run of that
+                                workflow: report to the user, nothing is sent back
+        infra           exit 5  a job failed with no failing step, or a run was cancelled: not the
+                                ticket's fault; nothing is sent back (re-run it once, then ask the user)
+        timeout         exit 6  the checks did not finish within --timeout
 USAGE
 }
 
@@ -61,8 +80,8 @@ state_cmd="$root/bin/factory-state"
 
 die() { echo "factory-integration: $*" >&2; exit 2; }
 cmd=${1:-}
-case "$cmd" in -h | --help) usage; exit 0 ;; ensure | merge | leftovers | cleanup) shift ;; *) usage >&2; exit 2 ;; esac
-spec="" branch="" ticket="" worktree="" title="" json=0
+case "$cmd" in -h | --help) usage; exit 0 ;; ensure | merge | leftovers | cleanup | ci) shift ;; *) usage >&2; exit 2 ;; esac
+spec="" branch="" ticket="" worktree="" title="" json=0 sha="" timeout=3600
 while [ $# -gt 0 ]; do
   case "$1" in
     --spec) spec=${2:?}; shift ;;
@@ -70,6 +89,8 @@ while [ $# -gt 0 ]; do
     --ticket) ticket=${2:?}; shift ;;
     --worktree) worktree=${2:?}; shift ;;
     --title) title=${2:?}; shift ;;
+    --sha) sha=${2:?}; shift ;;
+    --timeout) timeout=${2:?}; shift ;;
     --json) json=1 ;;
     -h | --help) usage; exit 0 ;;
     *) die "unknown argument $1" ;;
@@ -350,6 +371,45 @@ result() {
   jq --argjson w "${waited:-null}" 'if $w == null then . else . + {waited_seconds: $w} end'
 }
 
+# --- CI on the merged commit (the ci command) ---
+ghp() { (cd "$project" && gh "$@"); }
+ci_fields="databaseId,workflowName,status,conclusion,attempt,url,createdAt,startedAt,updatedAt,headSha"
+# the latest run of each workflow, from `gh run list` JSON on stdin
+ci_latest() { jq -c 'group_by(.workflowName) | map(max_by([.createdAt, (.attempt // 1)]))'; }
+# ci_failures RUN DEFAULT_RUNS: the failed jobs of a red run, as [{run, workflow, job, url, kind, preexisting, lines}].
+# kind: real (a step failed, or the job timed out) or infra (a job failed with no failing step, the run was
+# cancelled or never started, or the failed job's log shows a network or service error as factory-ci reads it). preexisting: a real failure of a job that also fails in the default branch's latest
+# completed run of the same workflow. Failed lines are the job's log lines that look like errors (else its last).
+ci_failures() {
+  local run=$1 dlist=$2 id wf jobs log lines dr dred=false dnames='[]' did
+  id=$(jq -r .databaseId <<<"$run") wf=$(jq -r .workflowName <<<"$run")
+  jobs=$(ghp run view "$id" --json jobs 2>/dev/null || echo '{"jobs":[]}')
+  log=$(ghp run view "$id" --log-failed 2>/dev/null || true)
+  lines=$(jq -R -s -c '
+    split("\n") | map(split("\t") | select(length >= 3)
+      | {job: .[0], text: (.[2:] | join("\t") | gsub("\u001b\\[[0-9;]*m"; "") | sub("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z ?"; "") | sub("\r$"; "") | .[0:300])}
+      | select(.text | test("[^ \t]")))' <<<"$log")
+  dr=$(jq -c --arg w "$wf" '[.[] | select(.workflowName == $w and .status == "completed")] | max_by([.createdAt, (.attempt // 1)]) // empty' <<<"$dlist")
+  if [ -n "$dr" ] && jq -e '.conclusion | IN("failure", "timed_out")' <<<"$dr" >/dev/null; then
+    dred=true did=$(jq -r .databaseId <<<"$dr")
+    dnames=$(ghp run view "$did" --json jobs 2>/dev/null | jq -c '[.jobs[]? | select(.conclusion | IN("failure", "timed_out")) | .name]' 2>/dev/null || echo '[]')
+  fi
+  jq -c --argjson run "$run" --argjson lines "$lines" --argjson dred "$dred" --argjson dnames "$dnames" --arg infra_re "$(factory_ci_infra_re)" '
+    [.jobs[]? | select(.conclusion | IN("failure", "timed_out", "cancelled"))] as $bad
+    | (if ($bad | length) == 0 then [{name: $run.workflowName, url: $run.url, conclusion: $run.conclusion, steps: []}] else $bad end)
+    | map(. as $j
+      | ([$lines[] | select(.job == $j.name) | .text]) as $all
+      | (if ($run.conclusion | IN("cancelled", "startup_failure")) or $j.conclusion == "cancelled" then "infra"
+         elif $j.conclusion == "timed_out" then "real"
+         elif ((.steps // []) | any(.conclusion == "failure")) | not then "infra"
+         elif any($all[]; test($infra_re; "i")) then "infra"
+         else "real" end) as $kind
+      | ([$all[] | select(test("error|fail|panic|assert|exception|not ok"; "i"))]) as $m
+      | {run: $run.databaseId, workflow: $run.workflowName, job: $j.name, url: ($j.url // $run.url), kind: $kind,
+         preexisting: ($kind == "real" and $dred and (($dnames | length) == 0 or ($dnames | index($j.name)) != null)),
+         lines: ((if ($m | length) > 0 then $m else $all end) | .[-15:])})' <<<"$jobs"
+}
+
 case "$cmd" in
 ensure)
   [[ "$spec" =~ ^[0-9]+$ ]] || die "ensure needs --spec <number>"
@@ -479,5 +539,61 @@ cleanup)
              cleanup_note: (if $note == "" then null else $note end)}]' <<<"$res")
   done
   jq . <<<"$res"
+  ;;
+ci)
+  [[ "$ticket" =~ ^[0-9]+$ ]] || die "ci needs --ticket <number>"
+  [[ "$timeout" =~ ^[0-9]+$ ]] || die "--timeout needs a number of seconds"
+  st=$("$state_cmd" show)
+  m=$(jq -c --arg t "$ticket" '.merged[$t] // empty' <<<"$st")
+  [ -n "$m" ] || die "ticket #$ticket is not merged; ci checks a merged ticket's commit"
+  spec=$(jq -r .spec <<<"$m")
+  ib=$(jq -r --arg s "$spec" '.integration[$s].branch // empty' <<<"$st")
+  [ -n "$ib" ] || die "spec #$spec has no integration branch"
+  [ -n "$sha" ] || sha=$(jq -r .commit <<<"$m")
+  def=$(default_branch)
+  began=$(date +%s) poll=${FACTORY_CI_POLL:-30} grace=${FACTORY_CI_GRACE:-180}
+  while :; do
+    list=$(ghp run list --branch "$ib" --commit "$sha" --limit 50 --json "$ci_fields") || die "gh run list failed; cannot read the checks of $sha"
+    latest=$(ci_latest <<<"$list")
+    runs_n=$(jq length <<<"$latest") pending=$(jq '[.[] | select(.status != "completed")] | length' <<<"$latest")
+    now=$(date +%s)
+    if [ "$runs_n" -gt 0 ] && [ "$pending" = 0 ]; then result=finished; break; fi
+    if [ "$runs_n" = 0 ] && [ $((now - began)) -ge "$grace" ]; then result=none; break; fi
+    if [ $((now - began)) -ge "$timeout" ]; then result=timeout; break; fi
+    sleep "$poll"
+  done
+  wall=$(($(date +%s) - began))
+  failures="[]" rework=false note="" duration=$wall
+  if [ "$result" = finished ]; then
+    red=$(jq -c '[.[] | select(.conclusion | IN("failure", "timed_out", "cancelled", "startup_failure"))]' <<<"$latest")
+    result=green
+    if [ "$(jq length <<<"$red")" -gt 0 ]; then
+      dlist=$(ghp run list --branch "$def" --limit 50 --json "$ci_fields" 2>/dev/null || echo '[]')
+      while IFS= read -r r; do
+        failures=$(jq -c --argjson f "$(ci_failures "$r" "$dlist")" '. + $f' <<<"$failures")
+      done < <(jq -c '.[]' <<<"$red")
+      if jq -e 'any(.[]; .kind == "real" and (.preexisting | not))' <<<"$failures" >/dev/null; then result=failed
+      elif jq -e 'any(.[]; .kind == "real")' <<<"$failures" >/dev/null; then result="red-on-default"
+      else result=infra; fi
+    fi
+    # the checks' own duration (first start to last finish), else the wait
+    duration=$(jq -r --argjson w "$wall" '
+      def s: sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601;
+      (try (([.[].updatedAt | s] | max) - ([.[].createdAt | s] | min)) catch $w)' <<<"$latest")
+  fi
+  short=$(printf '%.7s' "$sha")
+  reason=$(jq -r '[.[] | select(.kind == "real" and (.preexisting | not)) | .job] | unique | join(", ")' <<<"$failures")
+  "$state_cmd" ci --ticket "$ticket" --result "$result" --duration-s "$duration" --commit "$sha" ${reason:+--reason "$reason"}
+  if [ "$result" = failed ]; then
+    why="CI failed on $short of $ib: $(jq -r '[.[] | select(.kind == "real" and (.preexisting | not))
+      | "job \(.job) (\(.workflow)) \(.url)" + (if (.lines | length) > 0 then ": " + (.lines[-8:] | map(.[0:200]) | join(" | ")) else "" end)] | join("; ")' <<<"$failures")"
+    if err=$("$state_cmd" rework --ticket "$ticket" --reason "$why" 2>&1); then rework=true
+    else note="not sent back again: $err"; fi
+  fi
+  jq -n --argjson t "$ticket" --argjson sp "$spec" --arg b "$ib" --arg c "$sha" --arg r "$result" --argjson d "$duration" \
+    --argjson rw "$rework" --arg note "$note" --argjson f "$failures" \
+    '{ticket: $t, spec: $sp, branch: $b, commit: $c, result: $r, duration_s: $d, rework: $rw}
+     + (if $note == "" then {} else {rework_note: $note} end) + {failures: $f}'
+  case "$result" in failed) exit 3 ;; red-on-default) exit 4 ;; infra) exit 5 ;; timeout) exit 6 ;; esac
   ;;
 esac

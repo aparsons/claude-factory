@@ -57,6 +57,9 @@ Usage: factory-state <command> [options]
                                escalated, or has no tier above.
   review --spec S --findings K [--role R]
                                ledger only: review {spec, role, findings}; the spec report counts them
+  ci --ticket N --result green|failed|red-on-default|infra|timeout|none --duration-s S [--commit SHA] [--reason TEXT]
+                               ledger only: ci {ticket, spec, commit, result, duration_s, reason}; the CI
+                               on a merged commit: green and failed feed the CI pass rate and duration KPIs
   integration --spec S --branch B [--worktree P] [--status active|complete]
                                record a spec's integration branch
   estimate --spec S --usd X    record a spec's cost estimate (the first one is kept as first)
@@ -353,6 +356,15 @@ review)
   need_num --spec "$spec"; need_num --findings "$findings"
   event '{event: "review", ticket: null, spec: ($s | tonumber), role: (if $r == "" then null else $r end), findings: ($k | tonumber)}' \
     --arg s "$spec" --arg r "$role" --arg k "$findings"
+  ;;
+ci)
+  need_num --ticket "$ticket"
+  need_num --duration-s "$duration"
+  case "$result" in green | failed | red-on-default | infra | timeout | none) ;; *) die "ci needs --result green, failed, red-on-default, infra, timeout or none" ;; esac
+  spec=$(current | jq -r --arg t "$ticket" '(.assignments[$t] // .merged[$t] // {}).spec // empty')
+  event '{event: "ci", ticket: ($t | tonumber), spec: (if $s == "" then null else ($s | tonumber) end),
+      commit: (if $c == "" then null else $c end), result: $r, duration_s: ($d | tonumber), reason: (if $why == "" then null else $why end)}' \
+    --arg t "$ticket" --arg s "$spec" --arg c "$commit" --arg r "$result" --arg d "$duration" --arg why "$reason"
   ;;
 integration)
   need_num --spec "$spec"

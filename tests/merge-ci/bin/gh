@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016 # jq programs are single-quoted on purpose
+# A fake gh for the merge-ci suite, over files in $FAKE_GH_DIR: runs.json (the workflow runs, each
+# with headBranch and headSha), jobs-<id>.json (`gh run view <id> --json jobs`), log-<id>.txt
+# (`gh run view <id> --log-failed`). Every call is logged to calls.log. While FAKE_GH_PENDING_POLLS
+# is at or above the number of `run list` calls made for a commit, those runs are still in progress.
+# Any other call fails, so a test cannot reach the real GitHub through it.
+set -euo pipefail
+d=${FAKE_GH_DIR:?}
+printf '%s\n' "$*" >>"$d/calls.log"
+sub="${1:-} ${2:-}"
+shift 2 || true
+case "$sub" in
+  "run list")
+    branch="" commit=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --branch) branch=$2; shift ;;
+        --commit) commit=$2; shift ;;
+        --limit | --json) shift ;;
+        *) echo "fake gh: unexpected flag $1" >&2; exit 1 ;;
+      esac
+      shift
+    done
+    polls=0
+    if [ -n "$commit" ]; then echo x >>"$d/polls"; polls=$(wc -l <"$d/polls"); fi
+    jq --arg b "$branch" --arg c "$commit" --argjson polls "$polls" --argjson pending "${FAKE_GH_PENDING_POLLS:-0}" '
+      [.[] | select(.headBranch == $b and ($c == "" or .headSha == $c))
+       | if $c != "" and $polls <= $pending then .status = "in_progress" | .conclusion = null else . end]' "$d/runs.json"
+    ;;
+  "run view")
+    id=$1
+    shift
+    case "${1:-}" in
+      --log-failed) cat "$d/log-$id.txt" 2>/dev/null || true ;;
+      --json) cat "$d/jobs-$id.json" ;;
+      *) echo "fake gh: unexpected run view $*" >&2; exit 1 ;;
+    esac
+    ;;
+  *) echo "fake gh: unexpected $sub" >&2; exit 1 ;;
+esac

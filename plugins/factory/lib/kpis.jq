@@ -5,6 +5,8 @@
 # First-try: a ticket is first-try only if no gate event with result fail exists for it, whatever came before or after.
 # Rework per ticket: failed_gates (failures before the ticket's first pass), review_send_backs (failures after a pass),
 # escalations. The ledger itself is never rewritten.
+# CI: the ledger's `ci` events when there are any (green and failed; a red already on the default branch, an
+# infrastructure failure, a timeout and no checks say nothing about the ticket), else the runs given with --runs.
 # A KPI that cannot be computed from what is recorded is null (printed as n/a), never 0.
 
 include "ts";
@@ -58,8 +60,13 @@ def types: ["input", "output", "cache_read", "cache_creation"];
        escalations: ([$escs[] | select(.ticket == $t)] | length)}
     | . + {total: (.failed_gates + .review_send_backs + .escalations)}]) as $rework
 | ([$stops[] | select(.ticket != null and (.role == "implementer" or .role == "implementer-deep"))] | group_by(.ticket)) as $builds
-| ([($runs // [])[] | select(.conclusion == "success" or .conclusion == "failure")]) as $ci
-| ([$ci[] | select(.startedAt != null and .updatedAt != null) | (.updatedAt | ts2s) - (.startedAt | ts2s)]) as $ci_dur
+| ([$ev[] | select(.event == "ci" and (.result == "green" or .result == "failed"))
+    | {conclusion: (if .result == "green" then "success" else "failure" end), duration_s: .duration_s}]) as $ci_events
+| (if ($ci_events | length) > 0 then $ci_events
+   else [($runs // [])[] | select(.conclusion == "success" or .conclusion == "failure")] end) as $ci
+| ([$ci[] | if .duration_s != null then .duration_s
+            elif .startedAt != null and .updatedAt != null then (.updatedAt | ts2s) - (.startedAt | ts2s)
+            else empty end]) as $ci_dur
 | ((($usage // {}) | (.rate_limits // .)) as $u | {
     five_hour_pct: ($u.five_hour.used_percentage // null), five_hour_resets_at: ($u.five_hour.resets_at // null),
     seven_day_pct: ($u.seven_day.used_percentage // null), seven_day_resets_at: ($u.seven_day.resets_at // null)}) as $plan
