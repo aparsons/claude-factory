@@ -129,6 +129,36 @@ for s in "1. #60 (standalone) implementer" "#61 (standalone) blocked by #60" "#8
   pass=$((pass + 1))
 done
 
+# --- ticket-level blocking over a spec-level link (spec #90 is blocked by spec #100) ---
+run "$fx/spec-link"
+check "spec link: a ticket with its own link to a finished ticket of the blocking spec starts" '[.ready[].number] | index(91) != null'
+check "spec link: it is no longer held by the spec's link" '[.blocked[].number] | index(91) == null'
+check "spec link: a ticket with its own open link to the blocking spec is blocked by that ticket, not by the spec" \
+  '.blocked[] | select(.number == 92) | .status == "blocked" and .blocked_by == [102] and (.blocked_by_spec == [])'
+check "spec link: a ticket with no links of its own is spec-blocked, naming the spec" \
+  '.blocked[] | select(.number == 93) | .status == "spec-blocked" and .blocked_by == [100] and .blocked_by_spec == [100]'
+check "spec link: a ticket linked only to a sibling keeps its own blocker" '.blocked[] | select(.number == 94) | .status == "blocked" and .blocked_by == [93]'
+check "spec link: a link to a ticket outside the blocking spec does not lift it" \
+  '.blocked[] | select(.number == 95) | .status == "spec-blocked" and .blocked_by_spec == [100]'
+check "spec link: the blocking spec's own ticket is ready" '[.ready[].number] == [91, 102] or [.ready[].number] == [102, 91]'
+check "spec link: a spec with a ticket let through is ready, not blocked" '.specs[] | select(.number == 90) | .status == "ready" and .ready == 1'
+txt=$("$tool" --from "$fx/spec-link" --state "$tmp/none.json")
+for s in "#93 (spec #90) spec-blocked by spec #100" "#92 (spec #90) blocked by #102" "#91 (spec #90) implementer"; do
+  [[ "$txt" == *"$s"* ]] || fail "spec-link text output lacks '$s': $txt"
+  pass=$((pass + 1))
+done
+# a spec's link still holds when no ticket has a link of its own (every ticket of #90 reported spec-blocked)
+jq 'map(if .parent.number == 90 then .blockedBy = {nodes: [], totalCount: 0} else . end)' "$fx/spec-link/issues.json" >"$tmp/issues-unlinked.json"
+mkdir -p "$tmp/unlinked" && mv "$tmp/issues-unlinked.json" "$tmp/unlinked/issues.json"
+run "$tmp/unlinked"
+check "spec link: with no ticket linked, the spec link holds all its tickets" \
+  '([.blocked[] | select(.spec == 90 and .status == "spec-blocked") | .number] | sort) == [91, 92, 93, 94, 95] and (.specs[] | select(.number == 90) | .status == "blocked")'
+# the blocking spec is closed or merged away: nothing holds
+jq 'map(if .number == 90 then .blockedBy = {nodes: [{id: "I_100", number: 100, state: "CLOSED", title: "x", url: "u"}], totalCount: 1} else . end)' "$fx/spec-link/issues.json" >"$tmp/closed.json"
+mkdir -p "$tmp/closed" && mv "$tmp/closed.json" "$tmp/closed/issues.json"
+run "$tmp/closed"
+check "spec link: a closed blocking spec holds nothing" '[.blocked[] | select(.status == "spec-blocked")] == [] and ([.ready[].number] | index(93) != null)'
+
 # --- text output ---
 txt=$("$tool" --from "$fx/graph" --state "$tmp/none.json")
 for s in "Frontier: 7 ready" "1. #15 (spec #10) implementer-deep opus/high" "[security]" "[priority priority:high]" "#30 needs-tickets (needs /to-tickets)" "#12 (spec #10) blocked by #11"; do

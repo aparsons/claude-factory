@@ -21,6 +21,8 @@ While running, the manager keeps working between your messages: agent and CI com
 
 A spec is an issue with sub-issues (its tickets), or a parent-less issue marked as a spec (a `Spec:` or `PRD:` title, a `spec` label, or a `## User Stories` heading as `/to-spec` writes); a spec without sub-issues is reported as needing `/to-tickets`. Any other ready issue with no parent and no sub-issues, such as a bug or a small task, is a **standalone ticket**: ready when its native blockers are closed and ranked with the spec tickets by the same rules. Having no spec, it integrates into its own branch `ticket/<n>-<slug>`, made from the default branch: its implementer works from there, the manager merges it there, and it gets its own draft pull request (one ticket, one pull request). Merging that pull request to the default branch is an outward step the factory asks about, as for a spec.
 
+A ticket's own blocking links decide when it is ready; a spec blocked by another spec holds a ticket only when the ticket has no link of its own to the blocking spec's work (the spec or one of its tickets), so linking a ticket to just the tickets it needs lets it start early without editing the tracker, and the frontier lists a ticket held only by its spec's link as `spec-blocked`, naming the spec.
+
 ## Guard rails
 
 `guard-bash` runs before every Bash call, in every session and subagent. It reads the command the way a shell splits it (quotes, `$(...)`, heredocs, comments, `;` `&&` `||` `|` `&`), so a look-alike such as `tail -n 100 build.log` or a commit message that mentions `--no-verify` passes.

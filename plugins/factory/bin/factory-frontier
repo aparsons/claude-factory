@@ -13,7 +13,8 @@ docs/agents/triage-labels.md), with their parents, sub-issues and native blocker
                 unblocked transitively, then oldest; each with its role (agent type factory:<role>), model and effort
                 from the agent definitions (agents/<role>.md), its ticket branch and its spec's integration branch
   running       tickets with an assignment in .factory/state.json
-  blocked       tickets with an open blocker, a blocked spec, or another assignee
+  blocked       tickets with an open blocker, held by their spec's blocking link (spec-blocked, naming the
+                blocking spec), or another assignee
   specs         per spec: tickets, merged, open, status (needs-tickets, ready, running, blocked, complete)
   needs_tickets specs with no sub-issues: they need /to-tickets
 A spec is a parent-less issue with sub-issues, or one marked as a spec (a "Spec:" or "PRD:" title,
@@ -23,6 +24,10 @@ integrated into its own branch ticket/<n>-<slug> from the default branch, and li
 one-ticket entry.
   alerts        a red default branch (its latest completed run of a workflow failed): first of all
 A ticket merged into its integration branch (state: merged) counts as done and no longer blocks.
+A ticket's own native blockers decide its readiness. A spec-level blocking link (its spec is blocked
+by another spec) holds a ticket only when the ticket has no blocker of its own inside the blocking
+spec (the spec or one of its sub-issues, open or closed); such a ticket is reported as spec-blocked
+with the blocking spec named (blocked_by_spec).
 
   --from DIR    read recorded gh output instead of calling gh (tests):
                   DIR/issues.json  the gh issue list output (required)
@@ -97,7 +102,7 @@ jq -r '
   (.ready[] | "  \(.rank). #\(.number) \(of) \(.role) \(.model)/\(.effort)  \(.title)" + (why | if . == "" then "" else "  [\(.)]" end)),
   (if (.running | length) > 0 then "Running: " + ([.running[] | "#\(.number)"] | join(", ")) else empty end),
   (if (.blocked | length) > 0 then "Blocked:" else empty end),
-  (.blocked[] | "  #\(.number) \(of) \(.status)" + (if (.blocked_by | length) > 0 then " by " + ([.blocked_by[] | if . == "more" then "more" else "#\(.)" end] | join(", ")) else "" end)
+  (.blocked[] | "  #\(.number) \(of) \(.status)" + (if (.blocked_by | length) > 0 then " by " + (if .status == "spec-blocked" then "spec " else "" end) + ([.blocked_by[] | if . == "more" then "more" else "#\(.)" end] | join(", ")) else "" end)
      + (if .status == "assigned-elsewhere" then " (" + (.assignees | join(", ")) + ")" else "" end)),
   "Specs:",
   (.specs[] | "  #\(.number) \(.status)" + (if .standalone then " (standalone)" else "" end) + (if .status == "needs-tickets" then " (needs /to-tickets)" else "  \(.merged)/\(.tickets) merged, \(.ready) ready, \(.running) running" end) + "  \(.title)")
