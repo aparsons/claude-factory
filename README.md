@@ -17,7 +17,9 @@ In a project that follows the mattpocock-skills issue conventions (specs and tic
 - `/factory status`: frontier, running agents, blocked specs, KPIs.
 - `/factory stop`: no new agents; offers to stop running ones; writes a digest.
 
-State, ledger and digests live in the project's `.factory/` (kept out of `git status` through `.git/info/exclude`). Optional `.factory/settings.json` keys: `builder_cap`, `disk_reserve_gb`, `temp_min_gb`, `default_worktree_gb` (spawn gate); `check_command`; `priority_labels` (ordered, highest first); `factory_assignee` (a login whose assignment still counts as free); `roles` and `deep_when` (over `plugins/factory/data/roles.json`).
+A spec is an issue with sub-issues (its tickets), or a parent-less issue marked as a spec (a `Spec:` or `PRD:` title, a `spec` label, or a `## User Stories` heading as `/to-spec` writes); a spec without sub-issues is reported as needing `/to-tickets`. Any other ready issue with no parent and no sub-issues, such as a bug or a small task, is a **standalone ticket**: ready when its native blockers are closed and ranked with the spec tickets by the same rules. Having no spec, it integrates into its own branch `ticket/<n>-<slug>`, made from the default branch: its implementer works from there, the merger merges it there, and it gets its own draft pull request (one ticket, one pull request). Merging that pull request to the default branch is an outward step the factory asks about, as for a spec.
+
+State, ledger and digests live in the project's `.factory/` (kept out of `git status` through `.git/info/exclude`). Optional `.factory/settings.json` keys: `builder_cap`, `disk_reserve_gb`, `temp_min_gb`, `default_worktree_gb` (spawn gate); `check_command`; `priority_labels` (ordered, highest first); `factory_assignee` (a login whose assignment still counts as free); `roles` (a role's `model` or `effort` over its agent definition in `plugins/factory/agents/`) and `deep_when` (when a ticket goes to `implementer-deep`).
 
 Status: being built. See the open spec issue, [`GLOSSARY.md`](GLOSSARY.md) and [`docs/adr/`](docs/adr/).
 

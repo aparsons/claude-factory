@@ -22,11 +22,14 @@ A planned piece of work recorded as one issue, written by the user with `/to-spe
 A vertical slice of a spec, recorded as an issue with the spec as its parent and its blockers as native dependencies, written by the user with `/to-tickets`.
 _Avoid_: task, job
 
+**Standalone ticket**:
+A ticket with no spec: an issue ready for an agent with no parent and no sub-issues that is not marked as a spec, such as a bug or a small task. It is built and merged like any ticket, into its own integration branch `ticket/<n>-<slug>`, with its own pull request.
+
 **Frontier**:
 The tickets labelled ready for an agent whose blockers are all closed: what can start now.
 
 **Integration branch**:
-The branch a spec's tickets are merged into before the spec's single pull request to the default branch.
+The branch a spec's tickets are merged into before the spec's single pull request to the default branch (`spec/<n>-<slug>`); for a standalone ticket, its own branch `ticket/<n>-<slug>`.
 
 **Gate**:
 The checks a ticket's work must pass before it is merged into the integration branch: the project's check command and the review of the ticket.

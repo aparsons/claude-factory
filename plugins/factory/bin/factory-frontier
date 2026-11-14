@@ -16,6 +16,11 @@ docs/agents/triage-labels.md), with their parents, sub-issues and native blocker
   blocked       tickets with an open blocker, a blocked spec, or another assignee
   specs         per spec: tickets, merged, open, status (needs-tickets, ready, running, blocked, complete)
   needs_tickets specs with no sub-issues: they need /to-tickets
+A spec is a parent-less issue with sub-issues, or one marked as a spec (a "Spec:" or "PRD:" title,
+a spec or prd label, or a "## User Stories" heading in its body). A parent-less issue with no
+sub-issues that is not marked is a standalone ticket: ranked with the others (standalone: true),
+integrated into its own branch ticket/<n>-<slug> from the default branch, and listed in specs as a
+one-ticket entry.
   alerts        a red default branch (its latest completed run of a workflow failed): first of all
 A ticket merged into its integration branch (state: merged) counts as done and no longer blocks.
 
@@ -49,7 +54,7 @@ done
 [ -n "$project" ] || project=$(factory_project)
 [ -n "$statefile" ] || statefile="$project/.factory/state.json"
 
-fields=number,title,state,createdAt,labels,milestone,assignees,parent,blockedBy,blocking,subIssues,subIssuesSummary
+fields=number,title,body,state,createdAt,labels,milestone,assignees,parent,blockedBy,blocking,subIssues,subIssuesSummary
 if [ -n "$from" ]; then
   issues=$(jq -c . "$from/issues.json")
   repo='null' runs='null'
@@ -66,6 +71,9 @@ else
       --json workflowName,status,conclusion,url,createdAt 2>/dev/null || echo null)
   fi
 fi
+# Only whether the body marks a spec is kept: bodies are long, and jq takes the issues as one argument.
+issues=$(jq -c 'map(if has("body") then . + {body_marks_spec: ((.body // "")
+  | test("(^|\n)#{1,6}[ \t]*user stories[ \t]*(\r?\n|$)"; "i"))} | del(.body) else . end)' <<<"$issues")
 default=$(jq -c '.defaultBranchRef.name // null' <<<"$repo")
 state='{}'
 [ ! -f "$statefile" ] || state=$(jq -c . "$statefile")
@@ -84,12 +92,13 @@ jq -r '
             (if .milestone then "milestone \(.milestone.title)" else empty end),
             (if .unblocks > 0 then "unblocks \(.unblocks)" else empty end)] | join(", ");
   (.alerts[] | "ALERT: default branch \(.branch) is red: " + ([.failing[] | "\(.workflow) \(.url)"] | join("; "))),
+  def of: if .standalone then "(standalone)" else "(spec #\(.spec))" end;
   "Frontier: \(.ready | length) ready",
-  (.ready[] | "  \(.rank). #\(.number) (spec #\(.spec)) \(.role) \(.model)/\(.effort)  \(.title)" + (why | if . == "" then "" else "  [\(.)]" end)),
+  (.ready[] | "  \(.rank). #\(.number) \(of) \(.role) \(.model)/\(.effort)  \(.title)" + (why | if . == "" then "" else "  [\(.)]" end)),
   (if (.running | length) > 0 then "Running: " + ([.running[] | "#\(.number)"] | join(", ")) else empty end),
   (if (.blocked | length) > 0 then "Blocked:" else empty end),
-  (.blocked[] | "  #\(.number) (spec #\(.spec)) \(.status)" + (if (.blocked_by | length) > 0 then " by " + ([.blocked_by[] | if . == "more" then "more" else "#\(.)" end] | join(", ")) else "" end)
+  (.blocked[] | "  #\(.number) \(of) \(.status)" + (if (.blocked_by | length) > 0 then " by " + ([.blocked_by[] | if . == "more" then "more" else "#\(.)" end] | join(", ")) else "" end)
      + (if .status == "assigned-elsewhere" then " (" + (.assignees | join(", ")) + ")" else "" end)),
   "Specs:",
-  (.specs[] | "  #\(.number) \(.status)" + (if .status == "needs-tickets" then " (needs /to-tickets)" else "  \(.merged)/\(.tickets) merged, \(.ready) ready, \(.running) running" end) + "  \(.title)")
+  (.specs[] | "  #\(.number) \(.status)" + (if .standalone then " (standalone)" else "" end) + (if .status == "needs-tickets" then " (needs /to-tickets)" else "  \(.merged)/\(.tickets) merged, \(.ready) ready, \(.running) running" end) + "  \(.title)")
 ' <<<"$out"

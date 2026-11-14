@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# factory-integration: a spec's integration branch and its dedicated worktree, and the
+# factory-integration: a spec's (or a standalone ticket's) integration branch and its dedicated worktree, and the
 # mechanical merge of a finished ticket into it. Never switches the user's checkout and
 # never touches the default branch.
 set -euo pipefail
@@ -12,6 +12,9 @@ Usage:
       branch, and push it (hooks run). Make sure the integration worktree
       <project>/.claude/worktrees/spec-S exists on B, and record both with factory-state.
       Prints {spec, branch, worktree, created}.
+      A spec's B is spec/S-<slug>. A standalone ticket (no parent, no sub-issues) is its own unit
+      of integration: S is the ticket's number, B is ticket/S-<slug> and the worktree ticket-S;
+      the ticket is merged there like any other, and the branch gets its own pull request.
   factory-integration merge --ticket N --branch TICKET_BRANCH [--worktree PATH] [--title TEXT]
       In the ticket's spec integration worktree (from factory-state): fast-forward to origin,
       merge TICKET_BRANCH with --no-ff, push through the hooks, then remove the ticket's
@@ -61,7 +64,14 @@ default_branch() {
 case "$cmd" in
 ensure)
   [[ "$spec" =~ ^[0-9]+$ ]] || die "ensure needs --spec <number>"
-  [[ "$branch" == spec/* ]] || die "an integration branch is named spec/<number>-<slug>, got '$branch'"
+  case "$branch" in
+    spec/*) kind=spec ;;
+    ticket/*)
+      kind=ticket
+      [[ "$branch" =~ ^ticket/${spec}(-|$) ]] || die "a standalone ticket's branch is ticket/$spec-<slug>, got '$branch'"
+      ;;
+    *) die "an integration branch is named spec/<number>-<slug> (or ticket/<number>-<slug> for a standalone ticket), got '$branch'" ;;
+  esac
   def=$(default_branch)
   [ "$branch" != "$def" ] || die "refusing to use the default branch as an integration branch"
   g fetch -q origin
@@ -77,7 +87,7 @@ ensure)
     g fetch -q origin
     created=true
   fi
-  wt="$project/.claude/worktrees/spec-$spec"
+  wt="$project/.claude/worktrees/$kind-$spec"
   if [ ! -d "$wt" ]; then
     factory_exclude "$project" /.claude/worktrees/ /.factory/
     mkdir -p "$project/.claude/worktrees"
