@@ -16,7 +16,13 @@ Usage:
       In the ticket's spec integration worktree (from factory-state): fast-forward to origin,
       merge TICKET_BRANCH with --no-ff, push through the hooks, then remove the ticket's
       worktree PATH and delete TICKET_BRANCH, and record the merge with factory-state.
-      Prints {result, ...}. Exit 0: merged. Exit 3: conflict (merge aborted, nothing pushed,
+      Then, with gh: after the spec's first merge, open one draft pull request from the
+      integration branch to the default branch (unless one is open), naming the spec and the
+      tickets merged so far, ending with the project's attribution.pr from .claude/settings*.json;
+      each later merge adds its ticket and its Closes line to that body and changes nothing else.
+      The pull request stays a draft. Prints {result, ..., pull_request: {number, url, created}};
+      pull_request is null, with pull_request_error, when gh failed (the merge still stands).
+      Exit 0: merged. Exit 3: conflict (merge aborted, nothing pushed,
       worktree and branch kept; files listed). Exit 4: the integration branch has diverged from
       origin or the push failed (local merge undone; output included).
 USAGE
@@ -56,6 +62,79 @@ default_branch() {
     d=$( (cd "$project" && gh repo view --json defaultBranchRef --jq .defaultBranchRef.name) 2>/dev/null || true)
   fi
   printf '%s\n' "${d:-main}"
+}
+
+# pr_attribution: the project's pull request attribution (Claude Code's attribution.pr, from
+# .claude/settings.local.json, else .claude/settings.json); empty when it has none.
+pr_attribution() {
+  local f a
+  for f in "$project/.claude/settings.local.json" "$project/.claude/settings.json"; do
+    [ -f "$f" ] || continue
+    if a=$(jq -re '.attribution.pr | strings' "$f" 2>/dev/null); then printf '%s' "$a"; return; fi
+  done
+}
+
+issue_title() { (cd "$project" && gh issue view "$1" --json title) | jq -r '.title // empty'; }
+
+# draft_pr SPEC INTEGRATION_BRANCH DEFAULT_BRANCH TICKET TITLE: after a merge, opens the spec's
+# draft pull request from its integration branch, unless one is open; an open one gets each merged
+# ticket it lacks added to its list and its Closes lines, and nothing else in its body changes.
+# Never marks it ready. Prints {number, url, created}; returns non-zero when gh fails.
+draft_pr() {
+  local spec=$1 ib=$2 def=$3 ticket=$4 title=$5 open merged body missing lines="" closes="" n t url
+  merged=$("$state_cmd" show | jq -c --argjson s "$spec" \
+    '[.merged[] | select(.spec == $s)] | sort_by(.merged_at, .ticket) | map(.ticket)') || return 1
+  open=$(cd "$project" && gh pr list --head "$ib" --base "$def" --state open --json number,url,body --limit 1) || return 1
+  body=$(jq -r '.[0].body // ""' <<<"$open") || return 1
+  missing=$(jq -r --arg body "$body" '($body | split("\n")) as $l
+    | .[] | select(. as $t | $l | any(test("^- #\($t)( |\r?$)")) | not)' <<<"$merged") || return 1
+  for n in $missing; do
+    if [ "$n" = "$ticket" ] && [ -n "$title" ]; then t=$title; else t=$(issue_title "$n" || true); fi
+    lines+="- #$n${t:+ $t}"$'\n'
+    jq -e --arg body "$body" --arg n "$n" '$body | split("\n") | any(test("^Closes #\($n)\r?$"))' >/dev/null <<<null \
+      || closes+="Closes #$n"$'\n'
+  done
+  lines=${lines%$'\n'} closes=${closes%$'\n'}
+  if [ "$(jq length <<<"$open")" = 0 ]; then
+    local spec_title attribution
+    spec_title=$(issue_title "$spec" || true)
+    spec_title=$(sed -E 's/^[Ss]pec:[[:space:]]*//' <<<"$spec_title")
+    attribution=$(pr_attribution)
+    body="Spec #$spec${spec_title:+: $spec_title}
+
+The factory opened this draft pull request when the spec's first ticket merged into \`$ib\`, so that CI runs on the integration branch. It stays a draft: marking it ready or merging it is the user's step.
+
+Tickets merged so far:
+
+$lines
+
+$closes${attribution:+
+
+$attribution}"
+    url=$(cd "$project" && gh pr create --draft --base "$def" --head "$ib" \
+      --title "Spec #$spec${spec_title:+: $spec_title}" --body-file - <<<"$body") || return 1
+    url=$(tail -n 1 <<<"$url")
+    n=${url##*/}
+    [[ "$n" =~ ^[0-9]+$ ]] || { echo "gh pr create printed no pull request URL: $url" >&2; return 1; }
+    jq -n --argjson n "$n" --arg url "$url" '{number: $n, url: $url, created: true}'
+    return
+  fi
+  n=$(jq -r '.[0].number' <<<"$open") url=$(jq -r '.[0].url' <<<"$open")
+  if [ -n "$missing" ]; then
+    body=$(jq -rn --arg body "$body" --arg lines "$lines" --arg closes "$closes" '
+      def after_last($re; $new):
+        if $new == [] then . else
+          ([to_entries[] | select(.value | test($re)) | .key] | last) as $i
+          | if $i == null then . + [""] + $new else .[:$i + 1] + $new + .[$i + 1:] end
+        end;
+      def nonempty: split("\n") | map(select(length > 0));
+      $body | split("\n")
+      | after_last("^- #[0-9]+( |\r?$)"; $lines | nonempty)
+      | after_last("^Closes #[0-9]+\r?$"; $closes | nonempty)
+      | join("\n")') || return 1
+    (cd "$project" && gh pr edit "$n" --body-file - <<<"$body") >/dev/null || return 1
+  fi
+  jq -n --argjson n "$n" --arg url "$url" '{number: $n, url: $url, created: false}'
 }
 
 case "$cmd" in
@@ -100,7 +179,8 @@ merge)
   ib=$(jq -r --arg s "$spec" '.integration[$s].branch // empty' <<<"$st")
   wt=$(jq -r --arg s "$spec" '.integration[$s].worktree // empty' <<<"$st")
   [ -n "$ib" ] && [ -d "$wt" ] || die "spec #$spec has no integration worktree; run factory-integration ensure first"
-  [ "$ib" != "$(default_branch)" ] || die "refusing to merge into the default branch"
+  def=$(default_branch)
+  [ "$ib" != "$def" ] || die "refusing to merge into the default branch"
   w() { git -C "$wt" "$@"; }
   [ "$(w symbolic-ref -q --short HEAD)" = "$ib" ] || die "$wt is not on $ib"
   [ -z "$(w status --porcelain --untracked-files=no)" ] || die "$wt has uncommitted changes"
@@ -137,9 +217,17 @@ merge)
   deleted=false
   if [ "$removed" != false ] && w branch -q -d "$branch" 2>/dev/null; then deleted=true; fi
   "$state_cmd" merge --ticket "$ticket" --commit "$commit"
+  errf=$(mktemp "${TMPDIR:-/tmp}/factory-integration.XXXXXX")
+  pr_err=""
+  if ! pr=$(draft_pr "$spec" "$ib" "$def" "$ticket" "$title" 2>"$errf"); then
+    pr=null pr_err=$(cat "$errf")
+    pr_err=${pr_err:-gh failed}
+  fi
+  rm -f "$errf"
   jq -n --arg c "$commit" --arg tb "$branch" --arg ib "$ib" --arg wt "$worktree" \
-    --argjson removed "$removed" --argjson deleted "$deleted" \
+    --argjson removed "$removed" --argjson deleted "$deleted" --argjson pr "$pr" --arg pr_err "$pr_err" \
     '{result: "merged", commit: $c, ticket_branch: $tb, integration_branch: $ib,
-      worktree: (if $wt == "" then null else $wt end), worktree_removed: $removed, branch_deleted: $deleted}'
+      worktree: (if $wt == "" then null else $wt end), worktree_removed: $removed, branch_deleted: $deleted,
+      pull_request: $pr} + (if $pr_err == "" then {} else {pull_request_error: $pr_err} end)'
   ;;
 esac

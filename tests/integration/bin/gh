@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016 # jq programs are single-quoted on purpose
+# A fake gh for the integration suite, over files in $FAKE_GH_DIR: issues.json maps issue numbers
+# to titles, prs.json holds the pull requests, calls.log gets every call. FAKE_GH_FAIL=1 makes
+# every call fail, as when gh is offline or not authenticated.
+set -euo pipefail
+d=${FAKE_GH_DIR:?}
+printf '%s\n' "$*" >>"$d/calls.log"
+[ "${FAKE_GH_FAIL:-0}" != 1 ] || { echo "fake gh: offline" >&2; exit 1; }
+sub="${1:-} ${2:-}"
+shift 2 || true
+pos="" head="" base="" title="" body="" state="" draft=false
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --head) head=$2; shift ;;
+    --base) base=$2; shift ;;
+    --title) title=$2; shift ;;
+    --state) state=$2; shift ;;
+    --body-file) if [ "$2" = - ]; then body=$(cat); else body=$(cat "$2"); fi; shift ;;
+    --json | --limit) shift ;;
+    --draft) draft=true ;;
+    -*) echo "fake gh: unexpected flag $1" >&2; exit 1 ;;
+    *) pos=$1 ;;
+  esac
+  shift
+done
+upd() { jq "$@" "$d/prs.json" >"$d/prs.tmp" && mv "$d/prs.tmp" "$d/prs.json"; }
+case "$sub" in
+  "issue view")
+    jq -e --arg n "$pos" '{title: .[$n]} | select(.title != null)' "$d/issues.json"
+    ;;
+  "pr list")
+    [ "$state" = open ] || { echo "fake gh: pr list without --state open" >&2; exit 1; }
+    jq --arg h "$head" --arg b "$base" \
+      '[.[] | select(.state == "OPEN" and .head == $h and ($b == "" or .base == $b)) | {number, url, body, isDraft}]' "$d/prs.json"
+    ;;
+  "pr create")
+    n=$(($(jq length "$d/prs.json") + 101))
+    upd --argjson n "$n" --arg h "$head" --arg b "$base" --arg t "$title" --arg body "$body" --argjson draft "$draft" \
+      '. + [{number: $n, url: "https://github.com/o/r/pull/\($n)", head: $h, base: $b, title: $t, body: $body, isDraft: $draft, state: "OPEN"}]'
+    echo "https://github.com/o/r/pull/$n"
+    ;;
+  "pr edit")
+    upd --argjson n "$pos" --arg body "$body" 'map(if .number == $n then .body = $body else . end)'
+    ;;
+  *) echo "fake gh: unexpected $sub" >&2; exit 1 ;;
+esac
