@@ -16,6 +16,9 @@
 # event to a crashed session. A worktree counts as running unless it is safe to remove:
 # clean, tip contained in the default or a spec integration branch (merged, or no changes),
 # and older than YOUNG_MIN minutes (so a builder just started is not mistaken for empty).
+# A worktree that awaits its merge is not running either: its ticket's latest gate event in the
+# ledger is a pass and the state's agent for it has stopped. It still holds disk, so it counts
+# toward free space but not toward the cap; a later gate fail (sent back) makes it running again.
 set -euo pipefail
 
 YOUNG_MIN=15
@@ -96,6 +99,27 @@ while IFS= read -r r; do [ -n "$r" ] && bases+=("$r"); done < <(
   } | sort -u
 )
 
+# worktrees awaiting their merge, from the state's assignments and the ledger: one
+# "<worktree>\t<branch>" line per ticket whose latest gate is a pass and whose agent stopped
+awaiting_rows=""
+ledger_json=$(jq -sc 'map(select(type == "object"))' "$project/.factory/ledger.jsonl" 2>/dev/null || echo '[]')
+if [ -f "$project/.factory/state.json" ]; then
+  awaiting_rows=$(jq -r --argjson l "$ledger_json" '
+    (.assignments // {} | to_entries[].value) as $a
+    | select(($a.agent // "") != "")
+    | ($a.agent | sub("^agent-"; "")) as $id
+    | select(([$l[] | select(.event == "gate" and .ticket == $a.ticket)] | last | .result) == "pass")
+    | select($l | any(.event == "agent_stop" and ((.agent_id // "") | sub("^agent-"; "")) == $id))
+    | "\($a.worktree // "")\t\($a.branch // "")"' "$project/.factory/state.json" 2>/dev/null || true)
+fi
+is_awaiting() { # is_awaiting <worktree path> <branch>
+  local w b
+  while IFS=$'\t' read -r w b; do
+    { [ -n "$w" ] && [ "$(readlink -f "$w")" = "$(readlink -f "$1")" ]; } || { [ -n "$b" ] && [ "$b" = "$2" ]; } && return 0
+  done <<<"$awaiting_rows"
+  return 1
+}
+
 # Build output outside ticket worktrees: what is untracked or git-ignored (target/, build/, ...)
 # in the main checkout and in each integration worktree, minus the worktree and factory
 # directories themselves. Each line of `outside` is "kb<TAB>label<TAB>relative path<TAB>absolute path".
@@ -117,6 +141,8 @@ collect_build() { # collect_build <label> <checkout directory>
 now=$(date +%s)
 running=0
 safe=()
+running_wt=()
+awaiting_wt=()
 largest_kb=0
 for p in "${wt_paths[@]}"; do
   kb=$(du -sk "$p" 2>/dev/null | cut -f1 || true)
@@ -139,8 +165,11 @@ for p in "${wt_paths[@]}"; do
   [ $((now - born)) -lt $((YOUNG_MIN * 60)) ] && young=1
   if [ $merged = 1 ] && [ $dirty = 0 ] && [ $young = 0 ]; then
     safe+=("${p#"$project"/}${branch:+ ($branch)}")
+  elif is_awaiting "$p" "$branch"; then
+    awaiting_wt+=("${p#"$project"/}${branch:+ ($branch)}")
   else
     running=$((running + 1))
+    running_wt+=("${p#"$project"/}${branch:+ ($branch)}")
   fi
 done
 if [ "${FACTORY_TEST:-}" = 1 ] && [ -n "${FACTORY_TEST_MAIN_BUILD_MB:-}" ]; then
@@ -201,6 +230,14 @@ problems=()
     printf '   %s\n' "${safe[@]}"
   else
     echo "No worktree is safe to remove (none is merged or empty)."
+  fi
+  if [ ${#running_wt[@]} -gt 0 ]; then
+    echo "Running builders (count toward the cap):"
+    printf '   %s\n' "${running_wt[@]}"
+  fi
+  if [ ${#awaiting_wt[@]} -gt 0 ]; then
+    echo "Awaiting merge (finished, gate passed; count toward disk space, not the cap):"
+    printf '   %s\n' "${awaiting_wt[@]}"
   fi
   if [ ${#outside[@]} -gt 0 ]; then
     echo "Build output outside ticket worktrees (counted in the build estimate):"
