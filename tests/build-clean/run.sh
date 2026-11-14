@@ -77,6 +77,7 @@ echo '{"build_output_max_mb": 1}' >"$project/.factory/settings.json"
 # --- who is checked ---
 stop "$wt" factory:standards-reviewer; expect "reviewers are not builders" 0
 stop "$wt" factory:merger; expect "mergers are not builders" 0
+stop "$wt" factory:decision-reviewer; expect "the decision reviewer is not a builder" 0
 stop "$project" factory:implementer; expect "the main checkout is not a builder worktree" 0
 head -c 3000000 /dev/zero >"$project/big.untracked"
 stop "$project" factory:implementer; expect "main checkout output is never measured" 0

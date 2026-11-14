@@ -17,6 +17,9 @@
 # event to a crashed session. A worktree counts as running unless it is safe to remove:
 # clean, tip contained in the default or a spec integration branch (merged, or no changes),
 # and older than YOUNG_MIN minutes (so a builder just started is not mistaken for empty).
+# A worktree that awaits its merge is not running either: its ticket's latest gate event in the
+# ledger is a pass and the state's agent for it has stopped. It still holds disk, so it counts
+# toward free space but not toward the cap; a later gate fail (sent back) makes it running again.
 set -euo pipefail
 
 YOUNG_MIN=15
@@ -101,15 +104,59 @@ while IFS= read -r r; do [ -n "$r" ] && bases+=("$r"); done < <(
   } | sort -u
 )
 
+# worktrees awaiting their merge, from the state's assignments and the ledger: one
+# "<worktree>\t<branch>" line per ticket whose latest gate is a pass and whose agent stopped
+awaiting_rows=""
+ledger_json=$(jq -sc 'map(select(type == "object"))' "$project/.factory/ledger.jsonl" 2>/dev/null || echo '[]')
+if [ -f "$project/.factory/state.json" ]; then
+  awaiting_rows=$(jq -r --argjson l "$ledger_json" '
+    (.assignments // {} | to_entries[].value) as $a
+    | select(($a.agent // "") != "")
+    | ($a.agent | sub("^agent-"; "")) as $id
+    | select(([$l[] | select(.event == "gate" and .ticket == $a.ticket)] | last | .result) == "pass")
+    | select($l | any(.event == "agent_stop" and ((.agent_id // "") | sub("^agent-"; "")) == $id))
+    | "\($a.worktree // "")\t\($a.branch // "")"' "$project/.factory/state.json" 2>/dev/null || true)
+fi
+is_awaiting() { # is_awaiting <worktree path> <branch>
+  local w b
+  while IFS=$'\t' read -r w b; do
+    { [ -n "$w" ] && [ "$(readlink -f "$w")" = "$(readlink -f "$1")" ]; } || { [ -n "$b" ] && [ "$b" = "$2" ]; } && return 0
+  done <<<"$awaiting_rows"
+  return 1
+}
+
+# Build output outside ticket worktrees: what is untracked or git-ignored (target/, build/, ...)
+# in the main checkout and in each integration worktree, minus the worktree and factory
+# directories themselves. Each line of `outside` is "kb<TAB>label<TAB>relative path<TAB>absolute path".
+# A checkout's total also counts toward the largest-build estimate below.
+outside=()
+collect_build() { # collect_build <label> <checkout directory>
+  local label=$1 dir=$2 x kb total=0
+  while IFS= read -r -d '' x; do
+    case "$x" in .worktrees/* | .claude/* | .factory/*) continue ;; esac
+    kb=$(du -sk -- "$dir/$x" 2>/dev/null | cut -f1 || true)
+    [ -n "$kb" ] || continue
+    total=$((total + kb))
+    outside+=("$kb"$'\t'"$label"$'\t'"${x%/}"$'\t'"$dir/${x%/}")
+  done < <(git -C "$dir" ls-files -o --directory -z 2>/dev/null || true)
+  [ "$total" -gt "$largest_kb" ] && largest_kb=$total
+  return 0
+}
+
 now=$(date +%s)
 running=0
 safe=()
+running_wt=()
+awaiting_wt=()
 largest_kb=0
 for p in "${wt_paths[@]}"; do
   kb=$(du -sk "$p" 2>/dev/null | cut -f1 || true)
   [ -n "$kb" ] && [ "$kb" -gt "$largest_kb" ] && largest_kb=$kb
   branch=$(git -C "$p" symbolic-ref -q --short HEAD 2>/dev/null || true)
-  case "$branch" in main | master | spec/*) continue ;; esac # integration worktrees are not builders
+  case "$branch" in main | master | spec/*)
+    collect_build "integration worktree ${p#"$project"/}" "$p"
+    continue
+    ;; esac # integration worktrees are not builders
   head=$(git -C "$p" rev-parse -q --verify HEAD 2>/dev/null || true)
   merged=0
   for b in "${bases[@]}"; do
@@ -123,11 +170,32 @@ for p in "${wt_paths[@]}"; do
   [ $((now - born)) -lt $((YOUNG_MIN * 60)) ] && young=1
   if [ $merged = 1 ] && [ $dirty = 0 ] && [ $young = 0 ]; then
     safe+=("${p#"$project"/}${branch:+ ($branch)}")
+  elif is_awaiting "$p" "$branch"; then
+    awaiting_wt+=("${p#"$project"/}${branch:+ ($branch)}")
   else
     running=$((running + 1))
+    running_wt+=("${p#"$project"/}${branch:+ ($branch)}")
   fi
 done
+if [ "${FACTORY_TEST:-}" = 1 ] && [ -n "${FACTORY_TEST_MAIN_BUILD_MB:-}" ]; then
+  outside+=("$((FACTORY_TEST_MAIN_BUILD_MB * 1024))"$'\t'"main checkout"$'\t'"target"$'\t'"$project/target")
+  [ $((FACTORY_TEST_MAIN_BUILD_MB * 1024)) -gt "$largest_kb" ] && largest_kb=$((FACTORY_TEST_MAIN_BUILD_MB * 1024))
+else
+  collect_build "main checkout" "$project"
+fi
 measured_mb=$(((largest_kb + 1023) / 1024))
+
+# Is a process running inside a build directory (its working directory is in it)? Without
+# /proc this cannot be told, and the answer is "unknown", which never offers cleaning.
+build_in_use() { # build_in_use <absolute directory>; 0 = in use, 1 = not, 2 = unknown
+  [ -d /proc/self ] || return 2
+  local c t
+  for c in /proc/[0-9]*/cwd; do
+    t=$(readlink "$c" 2>/dev/null || true)
+    case "$t" in "$1" | "$1"/*) return 0 ;; esac
+  done
+  return 1
+}
 
 # --- free space ---
 free_mb() { df -Pm "$1" 2>/dev/null | awk 'NR == 2 { print $4 }'; }
@@ -173,6 +241,38 @@ fi
     printf '   %s\n' "${safe[@]}"
   else
     echo "No worktree is safe to remove (none is merged or empty)."
+  fi
+  if [ ${#running_wt[@]} -gt 0 ]; then
+    echo "Running builders (count toward the cap):"
+    printf '   %s\n' "${running_wt[@]}"
+  fi
+  if [ ${#awaiting_wt[@]} -gt 0 ]; then
+    echo "Awaiting merge (finished, gate passed; count toward disk space, not the cap):"
+    printf '   %s\n' "${awaiting_wt[@]}"
+  fi
+  if [ ${#outside[@]} -gt 0 ]; then
+    echo "Build output outside ticket worktrees (counted in the build estimate):"
+    main_lines=()
+    for line in "${outside[@]}"; do
+      IFS=$'\t' read -r kb label rel abs <<<"$line"
+      printf '   %s: %s (%d MB)\n' "$label" "$rel" $((kb / 1024))
+      [ "$label" = "main checkout" ] && main_lines+=("$rel"$'\t'"$abs")
+    done
+    if [ ${#main_lines[@]} -gt 0 ]; then
+      in_use=1
+      for line in "${main_lines[@]}"; do
+        rc=0
+        build_in_use "${line#*$'\t'}" || rc=$?
+        [ "$rc" = 1 ] || in_use=$rc
+      done
+      if [ "$in_use" = 1 ]; then
+        echo "Nothing is using the main checkout's build output: offer the user to clean it (cargo clean, or delete the directories above), and clean it only with the user's yes. The factory never cleans it on its own."
+      elif [ "$in_use" = 0 ]; then
+        echo "The main checkout's build output is in use by a running process; it is not offered for cleaning."
+      else
+        echo "Whether a build is using the main checkout's build output cannot be told here; ask the user before cleaning it (only with the user's yes)."
+      fi
+    fi
   fi
   echo "Free the space or wait for a running builder to finish, then start the builder again."
   echo "Limits come from .factory/settings.json (builder_cap, disk_reserve_gb, temp_min_gb, default_worktree_gb, budget_five_hour_pct)."

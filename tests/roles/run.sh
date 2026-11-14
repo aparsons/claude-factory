@@ -16,10 +16,11 @@ check() { jq -e "$2" <<<"$out" >/dev/null || fail "$1: $(jq -c "$2" <<<"$out" 2>
 # frontmatter <file> <key>: the value of a top-level key in a definition's frontmatter
 frontmatter() { awk -v k="$2" 'NR == 1 { next } /^---$/ { exit } index($0, k ": ") == 1 { print substr($0, length(k) + 3) }' "$1"; }
 
-# --- the six definitions carry the role table (spec #1, user story 17) ---
+# --- the seven definitions carry the role table (spec #1, user story 17) ---
 want='implementer sonnet high worktree
 implementer-deep opus high worktree
 merger haiku low -
+decision-reviewer haiku medium -
 standards-reviewer sonnet medium -
 spec-reviewer opus high -
 watcher haiku low -'
@@ -36,11 +37,11 @@ while read -r role model effort isolation; do
   [ -n "$(awk 'NR > 1 && /^---$/ { found = 1; next } found && NF { print; exit }' "$f")" ] || fail "$role: empty system prompt"
   pass=$((pass + 1))
 done <<<"$want"
-[ "$(find "$plugin/agents" -name '*.md' | wc -l)" = 6 ] || fail "exactly six definitions: $(ls "$plugin/agents")"
+[ "$(find "$plugin/agents" -name '*.md' | wc -l)" = 7 ] || fail "exactly seven definitions: $(ls "$plugin/agents")"
 pass=$((pass + 1))
 
 # --- reviewers and the merger and watcher have an allowlist without edit, write or agent tools ---
-for role in standards-reviewer spec-reviewer merger watcher; do
+for role in standards-reviewer spec-reviewer decision-reviewer merger watcher; do
   tools=$(frontmatter "$plugin/agents/$role.md" tools)
   [ -n "$tools" ] || fail "$role: no tools allowlist (no list means every tool)"
   for t in Edit Write MultiEdit NotebookEdit Agent Task; do
@@ -48,7 +49,7 @@ for role in standards-reviewer spec-reviewer merger watcher; do
   done
   pass=$((pass + 1))
 done
-for role in standards-reviewer spec-reviewer; do
+for role in standards-reviewer spec-reviewer decision-reviewer; do
   [[ "$(frontmatter "$plugin/agents/$role.md" tools)" == *Read* ]] || fail "$role cannot read"
   pass=$((pass + 1))
 done
@@ -59,9 +60,10 @@ pass=$((pass + 1))
 
 # --- factory-roles prints the table from the definitions ---
 out=$("$plugin/bin/factory-roles" --json)
-check "six roles" 'keys == ["implementer", "implementer-deep", "merger", "spec-reviewer", "standards-reviewer", "watcher"]'
+check "seven roles" 'keys == ["decision-reviewer", "implementer", "implementer-deep", "merger", "spec-reviewer", "standards-reviewer", "watcher"]'
 check "implementer" '.implementer == {role: "implementer", agent: "factory:implementer", model: "sonnet", effort: "high", isolation: "worktree", builder: true, tools: null}'
 check "spec reviewer is read-only" '.["spec-reviewer"] | .agent == "factory:spec-reviewer" and .model == "opus" and .effort == "high" and (.builder | not) and (.tools | index("Edit") == null)'
+check "decision reviewer is a small read-only model, not a builder" '.["decision-reviewer"] | .agent == "factory:decision-reviewer" and .model == "haiku" and .effort == "medium" and (.builder | not) and (.tools | index("Edit") == null) and (.tools | index("Write") == null)'
 txt=$("$plugin/bin/factory-roles")
 [[ "$txt" == *"implementer-deep"*"opus"*"high"*"worktree"* ]] || fail "text table: $txt"
 pass=$((pass + 1))

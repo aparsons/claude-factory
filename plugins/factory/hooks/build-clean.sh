@@ -7,7 +7,7 @@
 # Build output = what is not tracked in the worktree: untracked files and git-ignored files
 # (target/, build/, node_modules/, ...). Measured in the agent's working directory's
 # worktree; the project's main checkout is never measured, and neither are read-only roles
-# (reviewers, watcher, merger, Explore, Plan).
+# (reviewers, decision reviewer, watcher, merger, Explore, Plan).
 # Settings (.factory/settings.json): build_output_max_mb (default 500).
 #
 # A second refusal in a row (stop_hook_active) lets the agent finish and records a
@@ -25,7 +25,7 @@ input=$(cat)
 
 agent_type=$(jq -r '.agent_type // ""' <<<"$input")
 case "${agent_type#factory:}" in
-  merger | standards-reviewer | spec-reviewer | watcher | Explore | Plan) exit 0 ;;
+  merger | decision-reviewer | standards-reviewer | spec-reviewer | watcher | Explore | Plan) exit 0 ;;
 esac
 
 cwd=$(jq -r '.cwd // empty' <<<"$input")

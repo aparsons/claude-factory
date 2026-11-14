@@ -53,6 +53,21 @@ Confirm `git log -1` shows that commit before you start.
 This ticket was in progress when the factory's previous session ended; the agent that was building it is gone. Its work so far is on <branch> (`git log origin/<spec_branch>..HEAD`): <ahead> commit(s); a commit "WIP: salvaged after restart" holds what was not yet committed. Read them first, keep what is sound, and finish the ticket test-first from there. Do not start over unless the work is not worth keeping.
 ```
 
+## Decision reviewer
+
+Started after a ticket's check passes and before its merge (review.md). Fill in `<adrs>` and `<changed_files>` from `factory-review plan`, `<criteria>` with the ticket's acceptance criteria.
+
+```
+Review ticket #<ticket> of spec #<spec> for conflicts with the project's decisions. You are read-only: do not edit, commit or push.
+
+Read the ticket (`gh issue view <ticket>`), its acceptance criteria, the project's ADRs (<adrs>), and its diff against the integration branch: `<diff_command>` (files changed: <changed_files>).
+
+Report only two kinds of finding, and nothing else (no style, standards or suggestions):
+1. An ADR conflict: the diff does something an ADR rules out or drops something it requires. Name the ADR file, quote the line of the decision, and give the file and line of the diff that conflicts.
+2. An unmet acceptance criterion: quote the criterion and say what is missing.
+Every finding quotes its decision line or criterion verbatim. If there are none, reply exactly: no findings.
+```
+
 ## Merger (not used today)
 
 The manager runs `factory-integration merge` itself as a background command (start.md, steps 6 and 7); no merger agent is started. This brief stays for a project whose merges need judgement.
