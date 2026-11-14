@@ -7,8 +7,7 @@ Runs for a spec (or a standalone ticket) whose status is `complete`: every ticke
 Start the two reviewers at once, read-only, in the background, one Agent call each, with the briefs in `${CLAUDE_PLUGIN_ROOT}/skills/factory/briefs.md` ("Reviewer"):
 
 - `description`: `review spec #<spec>: standards` and `review spec #<spec>: spec` (the `#<spec>` lets the ledger attribute the run)
-- `subagent_type`: `general-purpose` (the role agents `standards-reviewer` and `spec-reviewer` arrive with ticket #6; then use them)
-- `model` and `effort`: from `${CLAUDE_PLUGIN_ROOT}/data/roles.json`, roles `standards-reviewer` and `spec-reviewer`
+- `subagent_type`: `factory:standards-reviewer` and `factory:spec-reviewer` (their model, effort and read-only tools are in their definitions; pass no `model` or `effort`)
 - no `isolation`: a reviewer reads the integration worktree (`factory-state show`, `.integration["<spec>"].worktree`) and never edits
 
 Each runs `code-review` on the branch's diff against the default branch, with its own focus (standards and docs; the spec's user stories, ticket acceptance criteria and security), and reports a numbered findings list with file and line, or "no findings". Reviewers do not push, comment on the tracker or edit files.
@@ -19,7 +18,7 @@ When both report, record each: `factory-state review --spec <spec> --role <role>
 
 ## 2. Fix
 
-No findings: go to step 3. Otherwise start **one** builder (the `implementer` role; `implementer-deep` when a finding is security) with the "Fixer" brief: the accepted findings, numbered, in its worktree based on `<branch>`. Record it as the brief says (`factory-state assign` under the spec's number), and start it as in start.md step 4 (`isolation` `worktree`, the spawn gate applies). It follows the implementer's rules (test first, check passes, clean build output) and reports like an implementer.
+No findings: go to step 3. Otherwise start **one** builder (`subagent_type` `factory:implementer`; `factory:implementer-deep` when a finding is security) with the "Fixer" brief: the accepted findings, numbered, in its worktree based on `<branch>`. Record it as the brief says (`factory-state assign` under the spec's number), and start it as in start.md step 4 (`isolation` `worktree`, the spawn gate applies). It follows the implementer's rules (test first, check passes, clean build output) and reports like an implementer.
 
 When it reports a passing check, start a merger as for any ticket (brief "Merger", `--ticket` the spec number, `--branch` the fixer's branch) and read its JSON as in start.md step 6. Review once only: do not start a second review round; list findings left unfixed in the lessons.
 

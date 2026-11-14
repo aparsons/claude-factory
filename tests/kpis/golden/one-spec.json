@@ -15,6 +15,7 @@
     "first_try_gate_pass_rate": 0.5,
     "rework_runs": 0,
     "escalations": 0,
+    "escalated": [],
     "ci_pass_rate": 0.67,
     "ci_median_duration_s": 180,
     "tests_added": 7,

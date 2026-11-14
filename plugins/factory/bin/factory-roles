@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016 # jq programs are single-quoted on purpose
+# factory-roles: the role table, read from the agent definitions (agents/<role>.md), and the
+# tier above a role for an escalation.
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: factory-roles [--json] [--project DIR]
+       factory-roles next ROLE [--effort E] [--project DIR]
+
+The role table lives only in the agent definitions' frontmatter (agents/<role>.md: model, effort,
+tools, isolation). A project may override a role's model or effort in .factory/settings.json:
+{"roles": {"implementer": {"model": "opus"}}}.
+
+  (no command)  print the table: role, agent type to start, model, effort, isolation, builder, tools
+  next ROLE     the tier above ROLE, for an escalation: the definition <ROLE>-deep when there is one,
+                else ROLE one effort level up (low, medium, high, xhigh, max) from E (default: the
+                role's effort). Prints {role, agent, model, effort, effort_override}; effort_override
+                means pass the effort to the Agent tool, since the definition says otherwise.
+                Exit 1 when there is no tier above; exit 2 for an unknown role.
+USAGE
+}
+
+root=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+# shellcheck disable=SC1091 # lib/common.sh, checked on its own
+. "$root/lib/common.sh"
+
+die() { echo "factory-roles: $*" >&2; exit 2; }
+cmd=table json=0 role="" effort="" project=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    next) cmd=next; role=${2:-}; [ -n "$role" ] || die "next needs a role"; shift ;;
+    --effort) effort=${2:?}; shift ;;
+    --json) json=1 ;;
+    --project) project=${2:?}; shift ;;
+    -h | --help) usage; exit 0 ;;
+    *) die "unknown argument $1" ;;
+  esac
+  shift
+done
+[ -n "$project" ] || project=$(factory_project)
+
+table=$(jq -c --argjson s "$(factory_settings "$project")" \
+  '. * (($s.roles // {}) | with_entries(.value |= (if type == "object" then {model, effort} | with_entries(select(.value != null)) else {} end)))
+   | with_entries(select(.value.agent != null))' <<<"$(factory_roles "$root")")
+
+case "$cmd" in
+table)
+  if [ "$json" = 1 ]; then
+    jq . <<<"$table"
+  else
+    jq -r '(["role", "agent", "model", "effort", "isolation", "tools"] | @tsv),
+      (to_entries[] | .value | [.role, .agent, .model, .effort, (.isolation // "-"),
+        (if .tools == null then "all" else .tools | join(",") end)] | @tsv)' <<<"$table" | column -t -s "$(printf '\t')"
+  fi
+  ;;
+next)
+  jq -e --arg r "$role" 'has($r)' <<<"$table" >/dev/null || die "no definition for role '$role'"
+  out=$(jq -c --arg r "$role" --arg e "$effort" '
+    ["low", "medium", "high", "xhigh", "max"] as $levels
+    | .[$r] as $cur
+    | (if $e == "" then $cur.effort else $e end) as $from
+    | if ($r | endswith("-deep") | not) and has($r + "-deep") then
+        .[$r + "-deep"] | {role, agent, model, effort, effort_override: false}
+      else
+        ($levels | index($from)) as $i
+        | if $i == null or $i + 1 >= ($levels | length) then empty
+          else {role: $r, agent: $cur.agent, model: $cur.model, effort: $levels[$i + 1],
+                effort_override: ($levels[$i + 1] != $cur.effort)} end
+      end' <<<"$table")
+  [ -n "$out" ] || { echo "factory-roles: no tier above $role at effort ${effort:-its default}" >&2; exit 1; }
+  printf '%s\n' "$out"
+  ;;
+esac
