@@ -15,6 +15,20 @@
     "first_try_gate_pass_rate": 0,
     "rework_runs": 2,
     "escalations": 1,
+    "escalated": [
+      {
+        "ts": "2026-02-01T09:12:00Z",
+        "ticket": 5,
+        "spec": null,
+        "from": "implementer",
+        "to": "implementer-deep",
+        "from_model": null,
+        "from_effort": null,
+        "model": null,
+        "effort": null,
+        "reason": "gate failed twice"
+      }
+    ],
     "ci_pass_rate": null,
     "ci_median_duration_s": null,
     "tests_added": 6,

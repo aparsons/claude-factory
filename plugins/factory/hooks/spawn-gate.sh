@@ -20,6 +20,9 @@ set -euo pipefail
 
 YOUNG_MIN=15
 warn() { echo "spawn-gate: warning: $*" >&2; }
+plugin=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+# shellcheck disable=SC1091 # lib/common.sh, checked on its own
+. "$plugin/lib/common.sh"
 
 input=$(cat)
 if ! jq -e 'type == "object"' >/dev/null 2>&1 <<<"$input"; then
@@ -33,15 +36,16 @@ if ! jq -e '.tool_input | type == "object"' >/dev/null 2>&1 <<<"$input"; then
   exit 0
 fi
 
+# A role is an agent definition (agents/<role>.md); it is a builder when it runs in its own
+# worktree (isolation: worktree in its frontmatter), as is any agent started with that isolation.
 agent_type=$(jq -r '.tool_input.subagent_type // ""' <<<"$input")
 isolation=$(jq -r '.tool_input.isolation // ""' <<<"$input")
-role=${agent_type#factory:}
-case "$role" in
-  implementer | implementer-deep | merger | standards-reviewer | spec-reviewer | watcher) ;;
-  *) role=other ;;
-esac
-builder=0
-if [ "$role" = implementer ] || [ "$role" = implementer-deep ] || [ "$isolation" = worktree ]; then builder=1; fi
+role=other builder=0
+if def=$(factory_role_file "$plugin" "$agent_type"); then
+  role=${agent_type#factory:}
+  awk 'NR == 1 { next } /^---$/ { exit } /^isolation:[ \t]*worktree[ \t]*$/ { found = 1 } END { exit !found }' "$def" && builder=1
+fi
+[ "$isolation" = worktree ] && builder=1
 [ "$builder" = 1 ] || exit 0
 
 project=${CLAUDE_PROJECT_DIR:-}

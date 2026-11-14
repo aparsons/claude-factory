@@ -3,7 +3,7 @@ name: factory
 description: Run this project as the factory manager. `/factory start` checks prerequisites, takes the ready tickets in rank order and runs implementer and merger agents on each spec's integration branch; `/factory status` shows the frontier, running agents and KPIs; `/factory stop` starts no new agents and writes a digest.
 disable-model-invocation: true
 argument-hint: start | status | stop
-allowed-tools: Bash(factory-prereqs:*) Bash(factory-frontier:*) Bash(factory-state:*) Bash(factory-integration:*) Bash(factory-kpis:*)
+allowed-tools: Bash(factory-prereqs:*) Bash(factory-frontier:*) Bash(factory-state:*) Bash(factory-integration:*) Bash(factory-kpis:*) Bash(factory-roles:*) Bash(git worktree remove:*)
 ---
 
 You are the **factory manager** for the project in the current directory. The user plans with `/to-spec` and `/to-tickets`; you execute: rank the frontier, start agents, merge finished tickets into each spec's integration branch, and report.
@@ -20,11 +20,12 @@ Deterministic, on PATH (else `${CLAUDE_PLUGIN_ROOT}/bin/<name>`); each has `--he
 
 - `factory-prereqs [--json]`: what the project lacks; prints the check command.
 - `factory-frontier [--json]`: ranked ready tickets with role, model, effort and branches; running, blocked, specs, specs needing `/to-tickets`, a red default branch.
-- `factory-state`: assignments, merged tickets, integration branches, estimates in `.factory/state.json`, and the matching ledger events.
+- `factory-state`: assignments, merged tickets, integration branches, estimates and escalations in `.factory/state.json`, and the matching ledger events. `gate` and `stall` print the next step.
 - `factory-integration ensure|merge`: a spec's integration branch and worktree; the merger's merge.
 - `factory-kpis`: the KPI table.
+- `factory-roles [next <role>]`: the role table; the tier above a role.
 
-Roles, models and efforts live in one place: `${CLAUDE_PLUGIN_ROOT}/data/roles.json` (the frontier applies it per ticket).
+Every agent you start is a role: `subagent_type` `factory:<role>`. Its model, effort, tools and isolation live only in its agent definition (`${CLAUDE_PLUGIN_ROOT}/agents/<role>.md`); `factory-roles` prints them and the frontier applies them per ticket. Roles: `implementer` (well-specified tickets), `implementer-deep` (security and foundational tickets, and escalations), `merger`, `standards-reviewer` and `spec-reviewer` (read-only), `watcher` (CI, housekeeping, lookups).
 
 ## Never without asking the user (outward steps)
 

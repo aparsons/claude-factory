@@ -57,3 +57,38 @@ factory_exclude() {
     grep -qxF -- "$path" "$ex" 2>/dev/null || printf '%s\n' "$path" >>"$ex"
   done
 }
+
+# factory_roles <plugin root>: the role table, read from the agent definitions'
+# frontmatter (agents/<role>.md, the only place it lives), as compact JSON:
+#   {<role>: {role, agent: "factory:<role>", model, effort, isolation, builder, tools}}
+# builder: the definition runs in its own worktree. tools: the allowlist, or null for all.
+factory_roles() {
+  local f
+  for f in "$1"/agents/*.md; do
+    [ -f "$f" ] || continue
+    awk -v file="$(basename "$f" .md)" '
+      NR == 1 { if ($0 != "---") exit; next }
+      /^---$/ { exit }
+      /^[A-Za-z][A-Za-z_-]*:/ {
+        i = index($0, ":"); v = substr($0, i + 1)
+        gsub(/^[ \t]+|[ \t]+$/, "", v); gsub(/^"|"$/, "", v)
+        print file "\t" substr($0, 1, i - 1) "\t" v
+      }' "$f"
+  done | jq -R -s -c '
+    split("\n") | map(select(length > 0) | split("\t") | {file: .[0], key: .[1], value: .[2]})
+    | group_by(.file)
+    | map((map({key, value}) | from_entries) as $m | ($m.name // .[0].file) as $r
+        | {key: $r, value: {role: $r, agent: ("factory:" + $r), model: ($m.model // null), effort: ($m.effort // null),
+            isolation: ($m.isolation // null), builder: ($m.isolation == "worktree"),
+            tools: (if ($m.tools // "") == "" then null else $m.tools | split(",") | map(gsub("^\\s+|\\s+$"; "")) end)}})
+    | from_entries'
+}
+
+# factory_role_file <plugin root> <agent type>: the definition file of an agent type
+# (factory:<role> or <role>); fails when the type names no definition.
+factory_role_file() {
+  local role=${2#factory:}
+  [[ "$role" =~ ^[a-z0-9][a-z0-9-]*$ ]] || return 1
+  [ -f "$1/agents/$role.md" ] || return 1
+  printf '%s\n' "$1/agents/$role.md"
+}

@@ -41,7 +41,7 @@ _Avoid_: worker
 An agent that reads and reports without building, such as a reviewer or a researcher. Not limited by disk.
 
 **Role**:
-What an agent is started for (implementer, merger, standards reviewer, spec reviewer, watcher). Each role has a default model and effort.
+What an agent is started for (implementer, deep implementer, merger, standards reviewer, spec reviewer, watcher). Each role is an agent definition in the plugin, which carries its model, effort, tools and isolation.
 
 **Escalation**:
 Running a ticket again one tier up in model or effort after its agent failed the gate twice or stalled.

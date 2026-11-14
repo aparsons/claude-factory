@@ -5,8 +5,11 @@
 #   $state   .factory/state.json (assignments, merged, integration)
 #   $runs    `gh run list --branch <default> --json workflowName,status,conclusion,url,createdAt` or null
 #   $default the default branch name or null
-#   $roles   data/roles.json
-#   $settings .factory/settings.json ({} when absent)
+#   $roles   the role table from the agent definitions (factory_roles in lib/common.sh)
+#   $settings .factory/settings.json ({} when absent); roles override a role's model or effort,
+#            deep_when overrides when a ticket goes to implementer-deep
+# A ticket goes to implementer-deep when it (or its spec) is security work, carries a
+# foundational label, or unblocks at least three open issues; every other ticket to implementer.
 # A spec is an issue without a parent; a ticket is a sub-issue of a spec. A ticket merged into its
 # integration branch stays open until the spec's pull request merges, so the state's merged tickets
 # count as done: they are not offered again and they no longer block.
@@ -17,8 +20,9 @@ def slug($n): lc | sub("^spec\\s*:\\s*"; "") | gsub("[^a-z0-9]+"; "-") | .[0:$n]
 def key: tostring;
 
 ($settings.roles // {}) as $role_over
-| ($roles.roles * $role_over) as $R
-| ($roles.deep_when * ($settings.deep_when // {})) as $deep
+| ($roles * $role_over) as $R
+| ({security: true, labels: ["foundation", "foundational", "architecture", "breaking-change"], unblocks_at_least: 3}
+   * ($settings.deep_when // {})) as $deep
 | ($state.merged // {}) as $merged
 | ($state.assignments // {}) as $assigned
 | ($settings.factory_assignee // null) as $me
@@ -89,7 +93,7 @@ def key: tostring;
          priority_label: ([prio, $sp.prio] | min_by(.tier) | .label),
          milestone: (if $ms then {title: $ms.title, due_on: ($ms.dueOn // null), number: ($ms.number // null)} else null end),
          unblocks: $ub, created_at: .createdAt,
-         role: $role, model: $R[$role].model, effort: $R[$role].effort,
+         role: $role, agent: "factory:\($role)", model: $R[$role].model, effort: $R[$role].effort,
          status: (if done(.number) then "merged"
                   elif $assigned | has($t.number | key) then "running"
                   elif ($ob | length) > 0 then "blocked"
