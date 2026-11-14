@@ -18,6 +18,6 @@ Write a factory digest for the project in the current directory. Do not edit any
 3. Run `factory-kpis` (if it is not on PATH, `${CLAUDE_PLUGIN_ROOT}/bin/factory-kpis`) with `--git-log "$tmp/merges.txt" --runs "$tmp/runs.json"` for the inputs you have. It reads `.factory/ledger.jsonl` and `.factory/usage.json` itself. Do not change its numbers.
 4. Create `.factory/digests/` and write `.factory/digests/<stamp>.md` containing:
    - the heading `# Factory digest, <time>`;
-   - a progress summary of at most six lines, using only what the table and the ledger show (tickets merged, agents running, escalations, stalls, cost range, plan usage). Say "not recorded" for anything n/a; never estimate or fill a gap;
+   - a progress summary of at most six lines, using only what the table and the ledger show (tickets merged, agents running, each escalation from the table's Escalations section with its ticket and reason, stalls, cost range, plan usage). Say "not recorded" for anything n/a; never estimate or fill a gap;
    - the full KPI table exactly as `factory-kpis` printed it.
 5. Print the path of the digest and nothing else.
