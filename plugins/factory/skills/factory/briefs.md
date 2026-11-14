@@ -39,6 +39,20 @@ This ticket is escalated: a previous attempt by <previous.role> (<previous.model
 Read its commits on <branch> first (`git log origin/<spec_branch>..HEAD`). Keep what is sound, find the cause of the failure and fix it; start over from origin/<spec_branch> if the attempt is not worth keeping.
 ```
 
+## Resumed implementer
+
+For an assignment `factory-resume` took over from a previous session. The implementer brief, with its worktree step replaced by this one and the paragraph after it added. (The first lines of "Escalated implementer" are the same worktree step.)
+
+```
+You are in your own git worktree. First put it on the interrupted attempt's branch, or on the spec's integration branch if that branch does not exist:
+  git fetch origin
+  git rev-parse -q --verify refs/heads/<branch> && git reset --hard <branch> || git reset --hard origin/<spec_branch>
+  git branch -M <branch>
+Confirm `git log -1` shows that commit before you start.
+
+This ticket was in progress when the factory's previous session ended; the agent that was building it is gone. Its work so far is on <branch> (`git log origin/<spec_branch>..HEAD`): <ahead> commit(s); a commit "WIP: salvaged after restart" holds what was not yet committed. Read them first, keep what is sound, and finish the ticket test-first from there. Do not start over unless the work is not worth keeping.
+```
+
 ## Merger
 
 ```

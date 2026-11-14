@@ -1,0 +1,2 @@
+check	Run scripts/check.sh	2026-01-01T10:09:00.0000000Z == tests/guard-bash/run.sh
+check	Run scripts/check.sh	2026-01-01T10:09:01.0000000Z The job running on runner GitHub Actions 7 has exceeded the maximum execution time of 10 minutes.
