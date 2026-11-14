@@ -1,0 +1,1 @@
+{"jobs":[{"name":"lint","conclusion":"failure","steps":[{"name":"shellcheck","conclusion":"failure"}]}]}

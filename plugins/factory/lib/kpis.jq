@@ -1,6 +1,7 @@
 # Computes the KPI object from the ledger (stdin, raw text, JSON lines).
 # Arguments: $prices, $runs (gh run list JSON or null), $usage (usage.json or null),
-#            $merges (array of {ts, subject} from a git log, or null), $health ({root_kb, tmp_kb}).
+#            $merges (array of {ts, subject} from a git log, or null), $health ({root_kb, tmp_kb}),
+#            $now (ISO 8601) and $stall_minutes (a passed ticket unmerged for longer is stalled).
 # First-try: a ticket is first-try only if no gate event with result fail exists for it, whatever came before or after.
 # Rework per ticket: failed_gates (failures before the ticket's first pass), review_send_backs (failures after a pass),
 # escalations. The ledger itself is never rewritten.
@@ -8,12 +9,9 @@
 # infrastructure failure, a timeout and no checks say nothing about the ticket), else the runs given with --runs.
 # A KPI that cannot be computed from what is recorded is null (printed as n/a), never 0.
 
-def ts2s:
-  capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:[0-9]{2})$") as $c
-  | ($c.d + "Z" | fromdateiso8601) as $base
-  | if $c.z == "Z" then $base
-    else (($c.z[1:3] | tonumber) * 3600 + ($c.z[4:6] | tonumber) * 60) as $o
-      | if $c.z[0:1] == "+" then $base - $o else $base + $o end end;
+include "ts";
+include "stalled";
+
 def median: if length == 0 then null else sort | (.[((length - 1) / 2 | floor)] + .[(length / 2 | floor)]) / 2 end;
 def sumnn: [.[] | select(type == "number")] | if length == 0 then null else add end;
 def round1: if . == null then null else (. * 10 | round) / 10 end;
@@ -90,12 +88,16 @@ def types: ["input", "output", "cache_read", "cache_creation"];
     merge_wait_total_s: (if ($timed_merges | length) == 0 then null else ([$timed_merges[] | .waited_s] | sumnn // 0) end),
     frontier_size: null,
     active_agents: (if $recorded then [$started[] | select(. as $a | $stopped | index($a) | not)] | length else null end),
-    stalls: (if $recorded then [$ev[] | select(.event == "stall")] | length else null end)},
+    stalls: (if $recorded then ([$ev[] | select(.event == "stall")] | length) + (merge_stalled($ev; $merged; $now; $stall_minutes) | length) else null end)},
   quality: {
     first_try_gate_pass_rate: (rate([$gates[] | select(all(.[]; .result != "fail"))] | length; $gates | length) | round2),
     rework_by_ticket: (if ($rework | length) == 0 then null else $rework end),
     rework_runs: (if ($builds | length) == 0 then null else [$builds[] | length - 1] | add end),
     escalations: (if $recorded then [$ev[] | select(.event == "escalation")] | length else null end),
+    escalated: (if $recorded then [$ev[] | select(.event == "escalation")
+      | {ts, ticket: (.ticket // null), spec: (.spec // null), from: (.from // null), to: (.to // null),
+         from_model: (.from_model // null), from_effort: (.from_effort // null),
+         model: (.model // null), effort: (.effort // null), reason: (.reason // null)}] else null end),
     ci_pass_rate: (rate([$ci[] | select(.conclusion == "success")] | length; $ci | length) | round2),
     ci_median_duration_s: ($ci_dur | median),
     tests_added: ([$ev[] | select(.event == "gate") | .tests_added] | sumnn),

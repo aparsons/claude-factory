@@ -1,0 +1,13 @@
+{
+  "session_id": "abc123",
+  "transcript_path": "/home/user/.claude/projects/p/t.jsonl",
+  "cwd": "/home/user/proj",
+  "model": {"id": "claude-opus-4-7", "display_name": "Opus"},
+  "workspace": {"current_dir": "/home/user/proj", "project_dir": "/home/user/proj"},
+  "version": "2.1.90",
+  "cost": {"total_cost_usd": 0.42, "total_duration_ms": 120000},
+  "rate_limits": {
+    "five_hour": {"used_percentage": 23.5, "resets_at": 1767276000},
+    "seven_day": {"used_percentage": 41.2, "resets_at": 1767800000}
+  }
+}

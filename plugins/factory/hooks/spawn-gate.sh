@@ -6,6 +6,7 @@
 # resource safety net, not a security boundary, and a gate that blocks on its own bug would
 # stop every agent start (including the manager's recovery); a false pass costs at most
 # one worktree build, which the factory-watch monitor also flags.
+# It also blocks a builder above the 5-hour plan-usage threshold (factory-budget).
 #
 # Test seam: when FACTORY_TEST=1, these replace real measurements:
 #   FACTORY_TEST_FREE_DISK_MB, FACTORY_TEST_FREE_TEMP_MB,
@@ -23,6 +24,9 @@ set -euo pipefail
 
 YOUNG_MIN=15
 warn() { echo "spawn-gate: warning: $*" >&2; }
+plugin=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+# shellcheck disable=SC1091 # lib/common.sh, checked on its own
+. "$plugin/lib/common.sh"
 
 input=$(cat)
 if ! jq -e 'type == "object"' >/dev/null 2>&1 <<<"$input"; then
@@ -36,15 +40,16 @@ if ! jq -e '.tool_input | type == "object"' >/dev/null 2>&1 <<<"$input"; then
   exit 0
 fi
 
+# A role is an agent definition (agents/<role>.md); it is a builder when it runs in its own
+# worktree (isolation: worktree in its frontmatter), as is any agent started with that isolation.
 agent_type=$(jq -r '.tool_input.subagent_type // ""' <<<"$input")
 isolation=$(jq -r '.tool_input.isolation // ""' <<<"$input")
-role=${agent_type#factory:}
-case "$role" in
-  implementer | implementer-deep | merger | standards-reviewer | spec-reviewer | watcher) ;;
-  *) role=other ;;
-esac
-builder=0
-if [ "$role" = implementer ] || [ "$role" = implementer-deep ] || [ "$isolation" = worktree ]; then builder=1; fi
+role=other builder=0
+if def=$(factory_role_file "$plugin" "$agent_type"); then
+  role=${agent_type#factory:}
+  awk 'NR == 1 { next } /^---$/ { exit } /^isolation:[ \t]*worktree[ \t]*$/ { found = 1 } END { exit !found }' "$def" && builder=1
+fi
+[ "$isolation" = worktree ] && builder=1
 [ "$builder" = 1 ] || exit 0
 
 project=${CLAUDE_PROJECT_DIR:-}
@@ -220,6 +225,12 @@ problems=()
 [ "$free_disk" -lt "$need_disk" ] && problems+=("free disk is $free_disk MB, need $need_disk MB (2 x $build_mb MB worktree build [$build_source] + $reserve_mb MB reserve)")
 [ "$free_temp" -lt "$temp_min_mb" ] && problems+=("free temporary space is $free_temp MB, need $temp_min_mb MB")
 [ "$running" -ge "$cap" ] && problems+=("$running builders are running, the cap is $cap")
+# plan usage: no new builders above the 5-hour threshold until the window resets. A budget
+# that cannot be read does not block (fails open, like the measurements).
+b=$(CLAUDE_PROJECT_DIR="$project" "$plugin/bin/factory-budget" --json 2>/dev/null || true) # exits 3 when it has findings
+if [ "$(jq -r '.builders // ""' <<<"$b" 2>/dev/null || true)" = paused ]; then
+  problems+=("$(jq -r '.messages[0]' <<<"$b")")
+fi
 [ ${#problems[@]} -eq 0 ] && exit 0
 
 {
@@ -264,6 +275,6 @@ problems=()
     fi
   fi
   echo "Free the space or wait for a running builder to finish, then start the builder again."
-  echo "Limits come from .factory/settings.json (builder_cap, disk_reserve_gb, temp_min_gb, default_worktree_gb)."
+  echo "Limits come from .factory/settings.json (builder_cap, disk_reserve_gb, temp_min_gb, default_worktree_gb, budget_five_hour_pct)."
 } >&2
 exit 2

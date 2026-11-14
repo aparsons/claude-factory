@@ -13,11 +13,15 @@ Usage: factory-kpis [--json] [--ledger FILE] [--git-log FILE] [--runs FILE] [--u
   --usage FILE    plan usage (default: <project>/.factory/usage.json when present)
   --prices FILE   prices (default: the plugin's data/prices.json)
   --json          print JSON instead of Markdown
+Stalls counts stall events and tickets whose gate passed but that have not merged for longer
+than merge_stall_minutes (.factory/settings.json, default 60).
 KPIs that cannot be computed from what is recorded print as n/a.
 USAGE
 }
 
 root=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+# shellcheck disable=SC1091 # lib/common.sh, checked on its own
+. "$root/lib/common.sh"
 project=${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}
 fdir="$project/.factory"
 ledger="$fdir/ledger.jsonl" gitlog="" runs="" usagefile="" prices="$root/data/prices.json" json=0
@@ -53,9 +57,9 @@ ledger_text=""
 
 kpis=$(printf '%s' "$ledger_text" | jq -R -s -c \
   --argjson prices "$(jq -c . "$prices")" --argjson runs "$runs_json" --argjson usage "$usage_json" \
-  --argjson merges "$merges" \
+  --argjson merges "$merges" --arg now "$(factory_now)" --argjson stall_minutes "$(factory_merge_stall_minutes "$project")" \
   --argjson health "{\"root_kb\": ${root_kb:-0}, \"tmp_kb\": ${tmp_kb:-0}}" \
-  -f "$root/lib/kpis.jq")
+  -L "$root/lib" -f "$root/lib/kpis.jq")
 
 if [ "$json" = 1 ]; then
   jq . <<<"$kpis"

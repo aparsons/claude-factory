@@ -1,0 +1,5 @@
+{"version": 1, "running": true, "assignments": {
+  "11": {"ticket": 11, "spec": 9, "role": "implementer", "model": "sonnet", "effort": "high", "branch": "t11-running", "worktree": null, "agent": null, "started": "2026-11-12T22:00:00Z"},
+  "12": {"ticket": 12, "spec": 9, "role": "implementer", "model": "sonnet", "effort": "high", "branch": "t12-stalled", "worktree": null, "agent": null, "started": "2026-11-12T22:01:00Z"},
+  "13": {"ticket": 13, "spec": 9, "role": "implementer", "model": "sonnet", "effort": "high", "branch": "t13-fresh", "worktree": null, "agent": null, "started": "2026-11-12T22:02:00Z"}},
+ "merged": {}, "integration": {}, "estimates": {}}

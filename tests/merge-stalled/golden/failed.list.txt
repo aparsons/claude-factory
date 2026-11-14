@@ -1,0 +1,2 @@
+ticket  spec  role         model   effort  age    status   branch
+#14     #9    implementer  sonnet  high    13h0m  running  t14-failed

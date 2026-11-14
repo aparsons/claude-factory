@@ -41,6 +41,20 @@
     ],
     "rework_runs": null,
     "escalations": 1,
+    "escalated": [
+      {
+        "ts": "2026-04-01T10:00:00Z",
+        "ticket": 9,
+        "spec": null,
+        "from": "implementer",
+        "to": "implementer-deep",
+        "from_model": null,
+        "from_effort": null,
+        "model": null,
+        "effort": null,
+        "reason": "stalled"
+      }
+    ],
     "ci_pass_rate": null,
     "ci_median_duration_s": null,
     "tests_added": 10,

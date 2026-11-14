@@ -169,6 +169,16 @@ ci
 [ "$(count_events rework)" = 0 ] || fail "infra failure sends nothing back"; ok
 last_event ci | jq -e '.result == "infra"' >/dev/null || fail "infra recorded"; ok
 
+# --- a failed step whose log shows a network error is infrastructure too, as factory-ci reads it ---
+project
+runs=""
+run 651 CI "$ib" "$sha" completed failure 2026-01-01T10:00:00Z 2026-01-01T10:07:00Z
+jobs 651 "test (ubuntu):failure:Install dependencies"
+printf 'test (ubuntu)\tInstall dependencies\t2026-01-01T10:06:02Z fatal: unable to access the repo: Could not resolve host: github.com\n' >"$FAKE_GH_DIR/log-651.txt"
+ci
+[ "$code" = 5 ] && jq -e '.result == "infra" and .rework == false and .failures[0].kind == "infra"' <<<"$out" >/dev/null || fail "network error in the log ($code): $out"; ok
+[ "$(count_events rework)" = 0 ] || fail "a network error sends nothing back"; ok
+
 # --- a re-run of the same workflow is the latest run: its result counts ---
 project
 runs=""

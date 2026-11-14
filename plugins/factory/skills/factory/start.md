@@ -2,7 +2,20 @@
 
 ## 1. Prerequisites
 
-Run `factory-prereqs`. If it exits non-zero, show its list and stop: the factory does not run half-configured. Otherwise keep its check command for the briefs, and run `factory-state running on`.
+Run `factory-prereqs`. If it exits non-zero, show its list and stop: the factory does not run half-configured. Otherwise keep its check command for the briefs, and run `factory-state running on`. Then start the rhythm in `wake.md`: run `factory-rhythm next` at the end of step 5 (once the first builders are started) and schedule the heartbeat it names.
+
+## 1a. Resume a previous session
+
+The factory's state is in the project (`.factory/state.json`), so a new session takes up where the last one stopped. Run `factory-resume` (add `--live <agentId>` for each agent you started in this conversation; in a new session there are none). The agents of the previous session are gone, so every saved assignment is **taken over, never assigned again**: `factory-state assign` refuses a ticket that has one, and the frontier keeps assigned tickets out of its ready list. If it lists nothing, go on to step 2; otherwise show its plan once and, per assignment, by its `action`:
+
+- `live`: nothing. An agent of this session runs it.
+- `merged`: the merge is on the integration branch but was not recorded. `factory-state merge --ticket <n> --commit <commit>`; if it has a `worktree`, `git worktree remove --force <worktree>` and `git branch -d <branch>`. One line: `#<n> merged into <integration_branch> (recorded after a restart)`.
+- `resume` (its worktree exists): when `salvage` is true, commit what is uncommitted there: `git -C <worktree> add -A && git -C <worktree> commit -m "WIP: salvaged after restart"`. Then `git worktree remove --force <worktree>` (the factory created it; the branch and its commits stay), `factory-state resume --ticket <n> --action resume`, and start the builder as in step 5 without `assign`: `subagent_type` `factory:<role>`, `isolation` `worktree`, `run_in_background` true, `model` and `effort` as in the plan (an escalated ticket keeps its escalated tier, and the tools still allow one escalation only), `prompt` the "Resumed implementer" brief. Then `factory-state update --ticket <n> --agent <agentId>`.
+- `restart` (its worktree is gone): `factory-state resume --ticket <n> --action restart`, then start the builder the same way (the brief starts from the branch when it exists, else from the integration branch).
+
+The spawn gate applies to each start. If it blocks one, the assignment stays without an agent; the next `factory-resume` lists it as `restart`, so start it when the gate allows. One line per ticket (`#<n> resumed: <role> <model>/<effort>, <ahead> commit(s) kept`); the next digest lists escalations as usual.
+
+Also from the plan: `orphans` are worktrees under `.claude/worktrees` that nothing owns; list them and ask before removing any (you cannot know who made them). `integration` entries with `action` `ensure` get `factory-integration ensure --spec <spec> --branch <branch>`. A spec the frontier calls `complete` with no pull request from its integration branch yet (`gh pr list --head <branch> --state all`) goes to `${CLAUDE_PLUGIN_ROOT}/skills/factory/finish.md`.
 
 ## 2. Frontier
 
@@ -10,63 +23,117 @@ Run `factory-frontier --json`, then show the user its text form (`factory-fronti
 
 - `alerts` with `default-branch-red`: say so first, with the failing workflow and run URL. A fix lands on the default branch, which is an outward step: ask whether to investigate it with a read-only agent; continue with the frontier meanwhile.
 - `needs_tickets`: list them as "needs /to-tickets". Do not write tickets.
+- A ticket with `standalone: true` is an issue with no parent and no sub-issues (a bug or small task). It is a ticket like any other; its `spec` is its own number and its `spec_branch` is its own integration branch `ticket/<n>-<slug>`. Every step below applies to it unchanged, with that number as the spec.
 - If the user names a ticket or spec to go first, take it next, whatever its rank.
 
 ## 3. Integration branches
 
-For each spec with a ready ticket, run `factory-integration ensure --spec <spec> --branch <spec_branch>` (the ticket's `spec_branch`). It creates and pushes the branch from the default branch when absent, and keeps a dedicated worktree for merges; it never switches the user's checkout.
+For each spec with a ready ticket, and each ready standalone ticket, run `factory-integration ensure --spec <spec> --branch <spec_branch>` (the ticket's `spec` and `spec_branch`). It creates and pushes the branch from the default branch when absent, and keeps a dedicated worktree for merges; it never switches the user's checkout.
 
-## 4. Start implementers
+## 4. Budgets
 
-For each `ready` ticket in rank order, start one implementer with the Agent tool:
+Before starting any builder, and after every merge, run `factory-budget`. Exit 0: carry on. Exit 3: each line it prints is a finding; act on it, one line to the user per finding, once (do not repeat a finding the user has already answered, until it changes):
+
+- `start no new builders until it resets` (5-hour usage above its limit): start no builder, and no escalated re-run, until the time it names; the `spawn-gate` hook refuses them anyway. Merges, reviewers and agents already running go on. Resume when the window has reset (a heartbeat or `factory-budget` shows it).
+- `ask the user before continuing` (7-day usage above its limit): an outward step (spending past the budget). Ask in one question whether to continue; start no new builder until they say so.
+- `passes <n> times its first estimate` (a spec's estimated cost): report the spec, its first and current estimate and what it has spent (`factory-kpis`, `cost.by_spec`), then ask whether to continue it; start nothing more for that spec until they say so.
+
+No usage recorded (the user has no status line installed, or no subscription limits): say once that plan usage is unknown and that the budgets on usage are not enforced; spec estimates still are. The status line command is `factory-statusline` (see `--help`; installing it changes the user's settings, which is theirs to do).
+
+Estimates: when a spec's first builder starts, and after each of its merges, record `factory-state estimate --spec <s> --usd <x>`, where x = what the spec has spent so far (`factory-kpis --json`, `cost.by_spec[].usd_high`) plus its tickets not yet merged times the average `usd_high` of its merged tickets (of all tickets when none is merged yet). Record none while no ticket has a cost. `factory-state` keeps the first and the current.
+
+Thresholds are the user's: `budget_five_hour_pct` (80), `budget_seven_day_pct` (85) and `budget_spec_ratio` (1.5) in `.factory/settings.json`.
+
+## 5. Start implementers
+
+For each `ready` ticket in rank order, start one builder with the Agent tool. The frontier has already picked its role from the ticket: `implementer-deep` for security or foundational work (a security label on the ticket or its spec, a foundational label, or a ticket that unblocks many others), `implementer` for the rest. Do not pick another role yourself unless the user tells you to.
 
 - `description`: `implement #<ticket>: <title>` (the `#<ticket>` lets the ledger attribute the run)
-- `subagent_type`: `general-purpose` (role agents arrive with ticket #6)
+- `subagent_type`: the ticket's `agent` (`factory:implementer` or `factory:implementer-deep`)
 - `isolation`: `worktree`; `run_in_background`: true
-- `model` and `effort`: the ticket's `model` and `effort`
+- `model` and `effort`: the ticket's `model` and `effort` (its definition's, or the project's override)
 - `prompt`: the implementer brief from `${CLAUDE_PLUGIN_ROOT}/skills/factory/briefs.md`, filled in
 
 If the spawn gate blocks the start, stop starting builders; show its reason in one line. Remove a worktree it lists as safe only if the factory created it (otherwise ask). Start the next builder when one finishes. The gate counts the main checkout's and the integration worktrees' build output too and lists it with sizes; it may offer cleaning the main checkout's build output: pass that offer to the user, and clean it only on their yes. A worktree whose ticket's latest gate passed and whose agent has finished is `awaiting merge`: it counts toward disk but not the cap, and the reason lists it apart from the running builders; a later gate failure (sent back) makes it running again.
 
 After each successful start, record it: `factory-state assign --ticket <n> --spec <s> --role <role> --model <model> --effort <effort> --branch <branch>`, then `factory-state update --ticket <n> --agent <agentId>`.
 
-## 5. When an implementer reports
+## 6. When an implementer reports
 
-- Check passed: `factory-state gate --ticket <n> --result pass --tests-added <k>` and `factory-state update --ticket <n> --worktree <path it reported>`. Then the decision review (`${CLAUDE_PLUGIN_ROOT}/skills/factory/review.md`): its findings send the ticket back as a gate failure instead of merging; no findings, or the review turned off in settings, go on without asking. Start the merge yourself, no agent: run `factory-integration merge --ticket <n> --branch <branch> --worktree <path> --title "<title>"` with the Bash tool, `run_in_background` true, and carry on; you are woken when it ends (step 6). A merge costs no model tokens, so waiting for the project's pre-push check on it costs nothing. Start each merge as soon as its ticket passes, even while another merge into the same integration branch runs: `factory-integration merge` takes its turn on its own, in the order started, and merges into different branches run in parallel. Never add a wait, a `pgrep` or a `sleep` loop, or a hand-made lock to a merge or its start. The merger role stays in `roles.json` for a project whose merges need judgement; none does today.
-- Check failed, or no evidence it passed: `factory-state gate --ticket <n> --result fail`, and send it back once with SendMessage, naming what failed. A second failure: `factory-state unassign --ticket <n> --reason "gate failed twice"`, tell the user, keep its worktree. (Escalation comes with ticket #6.)
-- Stopped without a report, or the report says it could not finish: unassign with the reason and tell the user.
+Record the gate result first: `factory-state update --ticket <n> --worktree <path it reported>`, then `factory-state gate --ticket <n> --result pass|fail [--tests-added <k>]`. It prints `next`; do what it says:
 
-## 6. When a merge ends
+- `merge` (check passed): first the decision review (`${CLAUDE_PLUGIN_ROOT}/skills/factory/review.md`): its findings send the ticket back as a gate failure instead of merging; no findings, or the review turned off in settings, go on without asking. Then start the merge yourself, no agent: run `factory-integration merge --ticket <n> --branch <branch> --worktree <path> --title "<title>"` with the Bash tool, `run_in_background` true, and carry on; you are woken when it ends (step 7). A merge costs no model tokens, so waiting for the project's pre-push check on it costs nothing. Start each merge as soon as its ticket passes, even while another merge into the same integration branch runs: `factory-integration merge` takes its turn on its own, in the order started, and merges into different branches run in parallel. Never add a wait, a `pgrep` or a `sleep` loop, or a hand-made lock to a merge or its start. The `merger` role stays for a project whose merges need judgement; none does today.
+- `retry` (first failure, or no evidence it passed): send it back once with SendMessage, naming what failed.
+- `escalate` (second failure): follow **Escalate** below with the reason `gate failed twice`.
+- `stop` (failed twice after its escalation, or no tier above): `factory-state unassign --ticket <n> --reason "gate failed twice after escalation"`, tell the user, keep its worktree.
+
+Stopped without a report, or the report says it could not finish: treat it as a gate failure with the reason it gave.
+
+### Stalls
+
+A builder with no commits, output or tool use for the stall time (a `factory-watch` line, or what you see) has stalled. Stop it (TaskStop), then `factory-state stall --ticket <n>`. It prints `next`: `escalate` (follow **Escalate** with the reason `stalled`) or `stop` (unassign with the reason `stalled after escalation`, tell the user, keep its worktree).
+
+### Escalate
+
+A ticket is re-run once, one tier up; the tools enforce once.
+
+1. `factory-state escalate --ticket <n> --reason "<reason>"`. It moves the assignment one tier up (the next definition, `implementer` to `implementer-deep`, else one effort level up), records the escalation in the state and the ledger, and prints the new `agent`, `model`, `effort`, `effort_override`, the `branch` and the `previous` attempt. Exit 3 means it may not escalate: unassign with its message and tell the user.
+2. If `previous.worktree` is set, remove that worktree so its branch can move to the new attempt: `git worktree remove --force <previous.worktree>` (the factory created it; the branch and its commits stay).
+3. Start the new builder as in step 5, with `subagent_type` the printed `agent`, `model` and `effort` as printed, and the escalated implementer brief, which names the previous attempt and what failed. Then `factory-state update --ticket <n> --agent <agentId>`.
+4. One line: `#<n> escalated: <previous.role> <previous.model>/<previous.effort> -> <role> <model>/<effort> (<reason>)`. The next digest lists it under Escalations.
+
+## 7. When a merge ends
 
 When the background merge ends, read its output (the JSON on stdout) and its exit code: 0 merged, 3 conflict, 4 diverged or push-failed; any other exit code or no JSON is a failed command: show its stderr and ask the user. The tool has already appended a `merge` ledger event with the result and the duration (queueing included), which `factory-kpis` reports as merge time; record nothing yourself. `waited_seconds` appears when it queued behind another merge; ignore it unless the wait looks long. Then, by the JSON's `result`:
 
 - `merged`: one line, `#<n> merged into <branch>`, with the draft pull request's URL when `pull_request.created` is true (`draft PR #<number> opened: <url>`). The tool already recorded the merge, removed the worktree and the ticket branch (locally and on origin), and opened the spec's draft pull request or added the ticket to it. Believe `worktree_removed` and `branch_deleted`: when either is false, say why in one line from `cleanup_note` (usually `worktree_lock.state` is `running`: the agent has not finished). The tool unlocks a worktree whose agent finished or whose process is gone and never breaks a running agent's lock, so do not unlock or remove anything by hand. If `pull_request` is null, say so with `pull_request_error` in one line; the next merge retries it. The pull request stays a draft: marking it ready or merging it is an outward step. Then, unless the project has no CI, start `factory-integration ci --ticket <n>` as a background Bash command (`run_in_background` true) and carry on; see "When CI ends".
 - `conflict`: nothing was pushed and the ticket's worktree is kept. Ask the ticket's implementer (SendMessage) to merge `origin/<spec_branch>`, resolve, rerun the check and report again; then run the merge again, the same way. If it is gone, unassign the ticket with the reason and tell the user.
-- `push-failed`: the pre-push check failed on the merged result. Record `factory-state gate --ticket <n> --result fail` and send the output to the implementer as above.
+- `push-failed`: the pre-push check failed on the merged result. Record `factory-state gate --ticket <n> --result fail` and follow its `next` as in step 6, sending the output to the implementer on `retry`.
 - `diverged`: someone else moved the integration branch. Stop that spec and ask the user.
 
-## When CI ends
+### When CI ends
 
 A merge counts as done only when CI on the merged commit is green. `factory-integration ci --ticket <n>` waits (polling, no model tokens) for the checks of the spec's pull request on the merged commit and ends with the result; you are woken when it does. Read its JSON and exit code, then by `result`:
 
 - `green` (exit 0): one line, `#<n> CI green (<duration_s>s)`. The tool recorded a `ci` ledger event with the result and the duration; record nothing yourself. `none` (exit 0): no checks ran for the commit; say so in one line.
 - `failed` (exit 3): the tool already recorded a gate failure against the ticket (the job's name, its URL and the failed lines) and sent it back through `factory-state rework`. Say one line (`#<n> CI failed: <job>, sent back`), start an implementer for it as in "Rework of a merged ticket" with the `failures` entries that are not `preexisting` (job, URL, lines) in its brief, then continue at step 5. `rework` false with a `rework_note` means the ticket was already back with an implementer: do not start another.
 - `red-on-default` (exit 4): every failing job also fails on the default branch, so the ticket did not cause it and nothing was sent back. Report the jobs and URLs to the user in a few lines and ask what to do; this is not rework.
-- `infra` (exit 5): a job failed with no failing step or the run was cancelled. Re-run it once (`gh run rerun <run> --failed`, the `run` of the failure) and run `factory-integration ci` again; if it comes back `infra` a second time, tell the user.
+- `infra` (exit 5): a job failed with no failing step or the run was cancelled. Run `factory-ci check --branch <branch> --sha <commit>` (step 9: it re-runs an infrastructure failure once; never run `gh run rerun` yourself), then `factory-integration ci --ticket <n>` again on the same commit; if it comes back `infra` a second time, tell the user.
 - `timeout` (exit 6): the checks did not finish in time; tell the user in one line and run it again when they say so.
 
 Any other exit code or no JSON is a failed command: show its stderr and ask the user.
 
-## Rework of a merged ticket
+### Rework of a merged ticket
 
-When something found after a ticket merged needs a follow-up fix to that same ticket (CI on the integration branch or the pull request fails because of it, or the user sends it back), do not assign it by hand: `factory-state rework --ticket <n> --reason "<what failed>"`. It moves the merged ticket back into the assignments (role, model and effort of its first assignment; `--role`, `--model`, `--effort` and `--branch` override them), keeps the earlier merge, and records a gate failure and a `rework` event, so the ticket stops counting as first-try and its rework shows in the KPIs. Start an implementer for it as in step 4 (brief: the failure and the earlier merge commit, `git log -1` of the ticket's `merged` record), then continue at step 5: a pass is merged as usual, and the ticket's merged record gains the new commit and keeps the old. A fix that is a new piece of work, not a correction of that ticket, is a new ticket instead.
+When something found after a ticket merged needs a follow-up fix to that same ticket (CI on the integration branch or the pull request fails because of it, or the user sends it back), do not assign it by hand: `factory-state rework --ticket <n> --reason "<what failed>"`. It moves the merged ticket back into the assignments (role, model and effort of its first assignment; `--role`, `--model`, `--effort` and `--branch` override them), keeps the earlier merge, and records a gate failure and a `rework` event, so the ticket stops counting as first-try and its rework shows in the KPIs. Start an implementer for it as in step 5 (brief: the failure and the earlier merge commit, `git log -1` of the ticket's `merged` record), then continue at step 6: a pass is merged as usual, and the ticket's merged record gains the new commit and keeps the old. A fix that is a new piece of work, not a correction of that ticket, is a new ticket instead.
 
-## 7. Continue
+## Monitor lines
+
+The `factory-watch` monitor starts with this skill and prints one line only when a condition starts (it is silent while `factory-state running` is off). Each line wakes you; act, or report in one line. Never poll for these yourself.
+
+- `disk` or `temp` (`factory-watch: disk: ...`, `... temp: ...`): start no builder until it clears (the spawn gate refuses anyway). Remove worktrees the factory created that are merged or empty (the lines of the gate's list), clean leaked directories under `${TMPDIR:-/tmp}` that a factory agent made; anything else is the user's: ask. If it does not clear, report it and wait.
+- `ci` (a run past three times its workflow's median): look at the run with a `factory:watcher` (`gh run view <id>`). A hung run: cancel it and re-run it once (re-running CI is not an outward step); if the failure repeats, report the log. A run that is only slow: say so in one line.
+- `stall` (a worktree with no progress for the stall time): the builder stalled. Follow **Stalls** above for its ticket (the branch `t<n>-...` names it). A worktree with no assignment is the user's: report it.
+- `merged` (a merged worktree not removed): the merge left it because its agent had not finished, or an escalation did. Run `factory-integration cleanup`: it finishes the clean-up of every merged ticket whose agent is done and leaves a running agent's alone. Otherwise ask.
+
+## 8. Continue
 
 Whenever an agent finishes (its completion notice arrives), run `factory-integration cleanup`: it retries the clean-up of every merged ticket whose worktree or branch was left because a lock was still held, and leaves a running agent's alone. Say one line for each ticket it finishes cleaning.
 
-After every merge, recompute the frontier (`factory-frontier --json`) and go back to step 3 for newly ready tickets.
+After every merge, recompute the frontier (`factory-frontier --json`) and go back to step 3 for newly ready tickets (the budgets of step 4 apply again). Check CI as step 9 says.
 
-When a spec's status is `complete`: run `factory-state integration --spec <s> --branch <branch> --status complete` and say "Spec #<s>: all tickets merged into <branch>." Start nothing more for it; spec review comes with ticket #9, which reuses the draft pull request the first merge opened rather than opening another.
+When a spec's status is `complete`: run `factory-state integration --spec <s> --branch <branch> --status complete` and say "Spec #<s>: all tickets merged into <branch>." (for a `standalone` entry: "Ticket #<s>: merged into <branch>."). Start no more tickets for it; follow `${CLAUDE_PLUGIN_ROOT}/skills/factory/finish.md` (review, one fixer, spec report, draft pull request, then ask). A standalone ticket goes through the same steps: its draft pull request is from `ticket/<n>-<slug>` to the default branch and closes that one issue. Marking a pull request ready and merging it are outward steps.
 
-When nothing is ready and nothing is running, go idle: say in a few lines what waits on the user (specs needing `/to-tickets`, blocked specs and why, failures left for them) and stop working until they reply.
+When nothing is ready and nothing is running, go idle as in `wake.md` (`factory-rhythm next` says `idle`): say in a few lines what waits on the user (`waiting_on_user`: specs needing `/to-tickets`, blocked specs and why, failures left for them), schedule no heartbeat, and stop working until they reply.
+
+## 9. CI
+
+After a merge pushes an integration branch, after a draft pull request is opened, and at each wake-up while a branch of the factory has CI pending, run `factory-ci check --branch <branch>`. It looks at the latest run of each workflow and decides; never run `gh run rerun` yourself.
+
+- A run with `rerun_started: true` failed for an infrastructure reason (the runner was lost, a network or service error, cancelled, did not start). The tool re-ran it, once; GitHub counts the attempts, so a restarted session does not re-run it again. One line in the session (no note, no push): `CI re-run: <workflow> <url> (<reason>)`. Nothing to ask.
+- Exit 3: each run with `action` `report` is a failure to tell the user: a real failure (a step failed, or the run timed out: a hang is not infrastructure), or an infrastructure error again after its re-run. One line with `factory-rhythm note ci-red --text "<workflow> <url>: <reason>"`, then its `log_lines` verbatim. Offer one fixer builder (the "Fixer" brief, `log_lines` as the findings); start it only when the user agrees.
+- `pending` above 0: nothing to say yet; check again at the next wake-up (a completion, a heartbeat), never by polling. A `watcher` agent (`gh run watch`) may wait for one run, but its report is facts only: the decisions are the tool's.
+
+`factory-ci check --dry-run` decides without starting anything.
+
+The per-ticket gate after each merge is `factory-integration ci` (step 7, "When CI ends"): it waits for the checks of the merged commit, sends a failure the ticket caused back as rework and reads logs the way `factory-ci` does; `factory-ci check` is what re-runs an infrastructure failure and what watches the branch between merges.

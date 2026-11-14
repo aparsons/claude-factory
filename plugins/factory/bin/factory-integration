@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# factory-integration: a spec's integration branch and its dedicated worktree, and the
+# factory-integration: a spec's (or a standalone ticket's) integration branch and its dedicated worktree, and the
 # mechanical merge of a finished ticket into it. Never switches the user's checkout and
 # never touches the default branch.
 set -euo pipefail
@@ -12,6 +12,9 @@ Usage:
       branch, and push it (hooks run). Make sure the integration worktree
       <project>/.claude/worktrees/spec-S exists on B, and record both with factory-state.
       Prints {spec, branch, worktree, created}.
+      A spec's B is spec/S-<slug>. A standalone ticket (no parent, no sub-issues) is its own unit
+      of integration: S is the ticket's number, B is ticket/S-<slug> and the worktree ticket-S;
+      the ticket is merged there like any other, and the branch gets its own pull request.
   factory-integration merge --ticket N --branch TICKET_BRANCH [--worktree PATH] [--title TEXT]
       In the ticket's spec integration worktree (from factory-state): fast-forward to origin,
       merge TICKET_BRANCH with --no-ff, push through the hooks, then remove the ticket's
@@ -374,8 +377,8 @@ ci_fields="databaseId,workflowName,status,conclusion,attempt,url,createdAt,start
 # the latest run of each workflow, from `gh run list` JSON on stdin
 ci_latest() { jq -c 'group_by(.workflowName) | map(max_by([.createdAt, (.attempt // 1)]))'; }
 # ci_failures RUN DEFAULT_RUNS: the failed jobs of a red run, as [{run, workflow, job, url, kind, preexisting, lines}].
-# kind: real (a step failed, or the job timed out) or infra (a job failed with no failing step, or the run was
-# cancelled or never started). preexisting: a real failure of a job that also fails in the default branch's latest
+# kind: real (a step failed, or the job timed out) or infra (a job failed with no failing step, the run was
+# cancelled or never started, or the failed job's log shows a network or service error as factory-ci reads it). preexisting: a real failure of a job that also fails in the default branch's latest
 # completed run of the same workflow. Failed lines are the job's log lines that look like errors (else its last).
 ci_failures() {
   local run=$1 dlist=$2 id wf jobs log lines dr dred=false dnames='[]' did
@@ -391,13 +394,16 @@ ci_failures() {
     dred=true did=$(jq -r .databaseId <<<"$dr")
     dnames=$(ghp run view "$did" --json jobs 2>/dev/null | jq -c '[.jobs[]? | select(.conclusion | IN("failure", "timed_out")) | .name]' 2>/dev/null || echo '[]')
   fi
-  jq -c --argjson run "$run" --argjson lines "$lines" --argjson dred "$dred" --argjson dnames "$dnames" '
+  jq -c --argjson run "$run" --argjson lines "$lines" --argjson dred "$dred" --argjson dnames "$dnames" --arg infra_re "$(factory_ci_infra_re)" '
     [.jobs[]? | select(.conclusion | IN("failure", "timed_out", "cancelled"))] as $bad
     | (if ($bad | length) == 0 then [{name: $run.workflowName, url: $run.url, conclusion: $run.conclusion, steps: []}] else $bad end)
     | map(. as $j
-      | (if ($run.conclusion | IN("cancelled", "startup_failure")) or $j.conclusion == "cancelled" then "infra"
-         elif $j.conclusion == "timed_out" or ((.steps // []) | any(.conclusion == "failure")) then "real" else "infra" end) as $kind
       | ([$lines[] | select(.job == $j.name) | .text]) as $all
+      | (if ($run.conclusion | IN("cancelled", "startup_failure")) or $j.conclusion == "cancelled" then "infra"
+         elif $j.conclusion == "timed_out" then "real"
+         elif ((.steps // []) | any(.conclusion == "failure")) | not then "infra"
+         elif any($all[]; test($infra_re; "i")) then "infra"
+         else "real" end) as $kind
       | ([$all[] | select(test("error|fail|panic|assert|exception|not ok"; "i"))]) as $m
       | {run: $run.databaseId, workflow: $run.workflowName, job: $j.name, url: ($j.url // $run.url), kind: $kind,
          preexisting: ($kind == "real" and $dred and (($dnames | length) == 0 or ($dnames | index($j.name)) != null)),
@@ -407,7 +413,14 @@ ci_failures() {
 case "$cmd" in
 ensure)
   [[ "$spec" =~ ^[0-9]+$ ]] || die "ensure needs --spec <number>"
-  [[ "$branch" == spec/* ]] || die "an integration branch is named spec/<number>-<slug>, got '$branch'"
+  case "$branch" in
+    spec/*) kind=spec ;;
+    ticket/*)
+      kind=ticket
+      [[ "$branch" =~ ^ticket/${spec}(-|$) ]] || die "a standalone ticket's branch is ticket/$spec-<slug>, got '$branch'"
+      ;;
+    *) die "an integration branch is named spec/<number>-<slug> (or ticket/<number>-<slug> for a standalone ticket), got '$branch'" ;;
+  esac
   def=$(default_branch)
   [ "$branch" != "$def" ] || die "refusing to use the default branch as an integration branch"
   g fetch -q origin
@@ -423,7 +436,7 @@ ensure)
     g fetch -q origin
     created=true
   fi
-  wt="$project/.claude/worktrees/spec-$spec"
+  wt="$project/.claude/worktrees/$kind-$spec"
   if [ ! -d "$wt" ]; then
     factory_exclude "$project" /.claude/worktrees/ /.factory/
     mkdir -p "$project/.claude/worktrees"

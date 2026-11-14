@@ -13,6 +13,8 @@ def dur: na(round | . as $s
 def range: if .usd_low == null then "n/a" else "\(.usd_low | usd) to \(.usd_high | usd)" end;
 def row($k; $v): "| \($k) | \($v) |";
 def gb: na(tostring + " GB");
+# a role and, when recorded, the model/effort it ran at
+def tier($role; $model; $effort): ($role // "n/a") + (if $model != null and $effort != null then " \($model)/\($effort)" else "" end);
 
 "# Factory KPIs",
 "",
@@ -36,6 +38,9 @@ row("CI pass rate"; .quality.ci_pass_rate | pct),
 row("CI duration (median)"; .quality.ci_median_duration_s | dur),
 row("Tests added"; .quality.tests_added | num),
 row("Review findings per ticket"; .quality.review_findings_per_ticket | na(tostring)),
+(if ((.quality.escalated // []) | length) == 0 then empty else
+  "", "### Escalations", "", "| Ticket | From | To | Reason |", "| --- | --- | --- | --- |",
+  (.quality.escalated[] | "| \(.ticket | na("#\(.)")) | \(tier(.from; .from_model; .from_effort)) | \(tier(.to; .model; .effort)) | \(.reason // "n/a") |") end),
 "",
 (if .quality.rework_by_ticket == null then "Rework per ticket: n/a" else
   "### Rework per ticket", "", "| Ticket | Failed gates | Review send-backs | Escalations | Total |", "| --- | --- | --- | --- | --- |",
