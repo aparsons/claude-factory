@@ -78,6 +78,15 @@ Read the JSON it relays from `factory-integration merge`:
 - `push-failed`: the pre-push check failed on the merged result. Record `factory-state gate --ticket <n> --result fail` and follow its `next` as in step 6, sending the output to the implementer on `retry`.
 - `diverged`: someone else moved the integration branch. Stop that spec and ask the user.
 
+## Monitor lines
+
+The `factory-watch` monitor starts with this skill and prints one line only when a condition starts (it is silent while `factory-state running` is off). Each line wakes you; act, or report in one line. Never poll for these yourself.
+
+- `disk` or `temp` (`factory-watch: disk: ...`, `... temp: ...`): start no builder until it clears (the spawn gate refuses anyway). Remove worktrees the factory created that are merged or empty (the lines of the gate's list), clean leaked directories under `${TMPDIR:-/tmp}` that a factory agent made; anything else is the user's: ask. If it does not clear, report it and wait.
+- `ci` (a run past three times its workflow's median): look at the run with a `factory:watcher` (`gh run view <id>`). A hung run: cancel it and re-run it once (re-running CI is not an outward step); if the failure repeats, report the log. A run that is only slow: say so in one line.
+- `stall` (a worktree with no progress for the stall time): the builder stalled. Follow **Stalls** above for its ticket (the branch `t<n>-...` names it). A worktree with no assignment is the user's: report it.
+- `merged` (a merged worktree not removed): the merger or an escalation left it. Run `git worktree remove <path>` for one the factory created (the branch stays, or is deleted by `git branch -d` when merged); otherwise ask.
+
 ## 8. Continue
 
 After every merge, recompute the frontier (`factory-frontier --json`) and go back to step 3 for newly ready tickets (the budgets of step 4 apply again).
