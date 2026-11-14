@@ -61,7 +61,7 @@ jobs() {
 ledger="$tmp/proj/.factory/ledger.jsonl"
 last_event() { jq -c --arg e "$1" 'select(.event == $e)' "$ledger" | tail -n 1; }
 count_events() { jq -c --arg e "$1" 'select(.event == $e)' "$ledger" 2>/dev/null | wc -l; }
-ci() { code=0; out=$("$fi_" ci --ticket 12 --timeout 5 "$@" 2>"$tmp/err") || code=$?; }
+ci() { code=0; out=$("$fi_" ci --ticket 12 --timeout 5 2>"$tmp/err") || code=$?; }
 
 # --- all checks green: one result, one ledger event with the duration ---
 project

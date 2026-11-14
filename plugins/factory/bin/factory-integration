@@ -560,7 +560,7 @@ ci)
         failures=$(jq -c --argjson f "$(ci_failures "$r" "$dlist")" '. + $f' <<<"$failures")
       done < <(jq -c '.[]' <<<"$red")
       if jq -e 'any(.[]; .kind == "real" and (.preexisting | not))' <<<"$failures" >/dev/null; then result=failed
-      elif jq -e 'any(.[]; .kind == "real")' <<<"$failures" >/dev/null; then result=red-on-default
+      elif jq -e 'any(.[]; .kind == "real")' <<<"$failures" >/dev/null; then result="red-on-default"
       else result=infra; fi
     fi
     # the checks' own duration (first start to last finish), else the wait
