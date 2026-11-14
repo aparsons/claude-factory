@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016 # jq programs are single-quoted on purpose
+# factory-ci: looks at the latest CI run of each workflow on a branch, re-runs one that failed
+# for an infrastructure reason (once), and reports a real failure with its failing log lines.
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: factory-ci check [--branch B] [--sha S] [--dry-run] [--max-lines N] [--project DIR]
+
+For the latest run of each workflow on branch B (default: the current branch of the project) that
+completed red (failure, cancelled, startup_failure), decides:
+  infra   the runner was lost (the job failed with no failing step), the run was cancelled or did
+          not start, or the failing log shows a network or service error (could not resolve host,
+          connection reset, 502/503/504, an action that could not be downloaded, ...)
+  real    anything else, and a run that timed out (a hang is not infrastructure)
+and acts:
+  rerun   infra, first attempt: `gh run rerun <id> --failed` (once; GitHub counts the attempts, so
+          a restarted session does not re-run it again)
+  report  real, or infra again on a later attempt, or a re-run gh refused: nothing is started; the
+          run's failing log lines (at most --max-lines, default 15) are in the output
+Runs in progress are counted as pending; green and skipped runs are ignored.
+
+Prints {branch, pending, runs: [{id, workflow, url, attempt, conclusion, verdict, action, reason,
+rerun_started, log_lines}]}. Exit 0: nothing to report (green, pending, or only re-runs started).
+Exit 3: at least one run to report to the user. Each decision is appended to the ledger
+(<project>/.factory/ledger.jsonl): ci_rerun {run, workflow, branch, attempt, verdict, reason, url},
+ci_failure with the same fields for a report.
+
+  --dry-run   decide, but start nothing (and record nothing)
+  --sha S     only runs of commit S
+USAGE
+}
+
+root=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+# shellcheck disable=SC1091 # lib/common.sh, checked on its own
+. "$root/lib/common.sh"
+
+die() { echo "factory-ci: $*" >&2; exit 2; }
+cmd=${1:-}
+case "$cmd" in -h | --help) usage; exit 0 ;; check) shift ;; *) usage >&2; exit 2 ;; esac
+branch="" sha="" dry=0 maxlines=15 project=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --branch) branch=${2:?}; shift ;;
+    --sha) sha=${2:?}; shift ;;
+    --dry-run) dry=1 ;;
+    --max-lines) maxlines=${2:?}; shift ;;
+    --project) project=${2:?}; shift ;;
+    -h | --help) usage; exit 0 ;;
+    *) die "unknown argument $1" ;;
+  esac
+  shift
+done
+[[ "$maxlines" =~ ^[0-9]+$ ]] || die "--max-lines needs a number"
+[ -n "$project" ] || project=$(factory_project)
+[ -n "$branch" ] || branch=$(git -C "$project" symbolic-ref -q --short HEAD 2>/dev/null || true)
+[ -n "$branch" ] || die "no --branch given and the project is not on a branch"
+
+dir="$project/.factory"
+ledger="$dir/ledger.jsonl"
+event() { # event <name> <run json>: appends one ledger line
+  [ -d "$dir" ] || { mkdir -p "$dir"; factory_exclude "$project" /.factory/; }
+  jq -nc --arg ts "$(factory_now)" --arg sid "${CLAUDE_SESSION_ID:-}" --arg ev "$1" --arg b "$branch" --argjson r "$2" \
+    '{ts: $ts, event: $ev, run: $r.id, workflow: $r.workflow, branch: $b, attempt: $r.attempt, verdict: $r.verdict,
+      reason: $r.reason, url: $r.url, session_id: (if $sid == "" then null else $sid end)}' >>"$ledger"
+}
+
+g() { (cd "$project" && gh "$@"); }
+
+fields="databaseId,workflowName,status,conclusion,attempt,url,createdAt,headSha"
+args=(run list --branch "$branch" --limit 50 --json "$fields")
+[ -z "$sha" ] || args+=(--commit "$sha")
+list=$(g "${args[@]}")
+
+# the latest run of each workflow
+latest=$(jq -c 'group_by(.workflowName) | map(max_by([.createdAt, (.attempt // 1)]))' <<<"$list")
+pending=$(jq '[.[] | select(.status != "completed")] | length' <<<"$latest")
+red=$(jq -c '[.[] | select(.status == "completed" and (.conclusion | IN("failure", "cancelled", "startup_failure", "timed_out")))]' <<<"$latest")
+
+# Infrastructure errors, as they appear in a log (extended regular expression, case-insensitive).
+infra_re='shutdown signal|lost communication with the server|received request to deprovision|runner .*(went offline|is offline|unreachable)|could not resolve host|temporary failure in name resolution|name or service not known|eai_again|connection reset by peer|connection timed out|tls handshake timeout|etimedout|econnreset|failed to connect to|rpc failed; curl|unexpected disconnect while reading sideband|early eof|returned error: 50[0-9]|http error 50[0-9]|(^|[^0-9])50[234] (bad gateway|service unavailable|gateway time)|service unavailable|bad gateway|unable to (download|resolve) action|failed to download action|an action could not be found at the uri|the operation was canceled'
+timeout_re='exceeded the maximum execution time'
+
+results='[]'
+rc=0
+while IFS= read -r run; do
+  [ -n "$run" ] || continue
+  id=$(jq -r .databaseId <<<"$run")
+  log=$(g run view "$id" --log-failed 2>/dev/null || true)
+  jobs=$(g run view "$id" --json jobs 2>/dev/null || echo '{"jobs":[]}')
+  # cleaned log lines: no prefix "job<TAB>step<TAB>", no timestamp, no colour codes, no blanks
+  lines=$(jq -R -s -c '
+    split("\n")
+    | map(gsub("\u001b\\[[0-9;]*m"; "") | sub("^[^\t]*\t[^\t]*\t"; "") | sub("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z ?"; "") | sub("\r$"; "") | .[0:300])
+    | map(select(test("[^ \t]")))' <<<"$log")
+  verdict=infra reason=""
+  concl=$(jq -r .conclusion <<<"$run")
+  attempt=$(jq -r '.attempt // 1' <<<"$run")
+  hit() { jq -r --arg re "$1" 'map(select(test($re; "i"))) | .[0] // empty | sub("^[ \t]+"; "")' <<<"$lines"; }
+  if [ "$concl" = timed_out ] || [ -n "$(hit "$timeout_re")" ]; then
+    verdict=real reason="timed out: a hang is not an infrastructure error"
+  elif [ "$concl" = startup_failure ]; then
+    reason="startup failure: the run did not start"
+  elif [ -n "$(hit "$infra_re")" ]; then
+    reason="infrastructure error in the log: $(hit "$infra_re")"
+  elif [ "$concl" = cancelled ]; then
+    reason="cancelled"
+  elif jq -e '[.jobs[]? | select(.conclusion | IN("failure", "cancelled")) | select([.steps[]? | select(.conclusion == "failure")] | length == 0)] | length > 0' <<<"$jobs" >/dev/null; then
+    reason="runner lost: a job failed with no failing step"
+  else
+    verdict=real reason="a step failed"
+  fi
+
+  action=report
+  if [ "$verdict" = infra ]; then
+    if [ "$attempt" -ge 2 ]; then
+      reason="$reason; infrastructure error again after a re-run, not re-running a second time"
+    else
+      action=rerun
+    fi
+  fi
+  loglines=$(jq -c --argjson n "$maxlines" '
+    (map(select(test("error|fail|panic|assert|exception|not ok"; "i")))) as $m
+    | (if ($m | length) > 0 then $m else . end) | .[-$n:]' <<<"$lines")
+  [ "$maxlines" != 0 ] || loglines='[]'
+
+  r=$(jq -nc --argjson run "$run" --arg verdict "$verdict" --arg action "$action" --arg reason "$reason" \
+    --argjson lines "$loglines" --argjson attempt "$attempt" \
+    '{id: $run.databaseId, workflow: $run.workflowName, url: $run.url, attempt: $attempt, conclusion: $run.conclusion,
+      verdict: $verdict, action: $action, reason: $reason, rerun_started: false, log_lines: $lines}')
+
+  if [ "$action" = rerun ] && [ "$dry" = 0 ]; then
+    if err=$(g run rerun "$id" --failed 2>&1); then
+      r=$(jq -c '.rerun_started = true' <<<"$r")
+      event ci_rerun "$r"
+    else
+      r=$(jq -c --arg e "$err" '.action = "report" | .reason += "; re-run failed: " + $e' <<<"$r")
+      event ci_failure "$r"
+    fi
+  elif [ "$action" = report ] && [ "$dry" = 0 ]; then
+    event ci_failure "$r"
+  fi
+  [ "$(jq -r .action <<<"$r")" != report ] || rc=3
+  results=$(jq -c --argjson r "$r" '. + [$r]' <<<"$results")
+done < <(jq -c '.[]' <<<"$red")
+
+jq -n --arg b "$branch" --argjson p "$pending" --argjson runs "$results" '{branch: $b, pending: $p, runs: $runs}'
+exit "$rc"

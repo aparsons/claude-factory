@@ -58,15 +58,8 @@ if [ "$have_git" = 1 ]; then
 fi
 
 # --- check command ---
-check_command=$(factory_settings "$project" | jq -r '.check_command // empty')
-claude_md=""
-for f in "$project/CLAUDE.md" "$project/.claude/CLAUDE.md"; do [ -f "$f" ] && { claude_md=$f; break; }; done
-if [ -z "$check_command" ] && [ -n "$claude_md" ]; then
-  # First code span on a line about checks or tests that looks like a command.
-  check_command=$(grep -iE 'check|test|\bCI\b' "$claude_md" | grep -oE '`[^`]+`' | tr -d '`' |
-    grep -E '^(\./|scripts/|bin/|tools/)|\.sh( |$)|^(make|just|npm|pnpm|yarn|bun|deno|cargo|go|pytest|tox|nox|uv|poetry|mvn|gradle|\./gradlew|dotnet|bazel|mix|bundle|rake)( |$)' |
-    head -n 1 || true)
-fi
+check_command=$(factory_check_command "$project")
+claude_md=$(factory_claude_md "$project")
 if [ -z "$claude_md" ] && [ -z "$check_command" ]; then
   miss claude-md "no CLAUDE.md in the project" "add a CLAUDE.md that names the check command, e.g. 'Run \`scripts/check.sh\` before every commit'"
 elif [ -z "$check_command" ]; then

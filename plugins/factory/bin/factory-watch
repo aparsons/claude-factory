@@ -1,0 +1,239 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016 # jq programs are single-quoted on purpose
+# factory-watch: the factory's monitor. Prints one line on stdout each time a watched
+# condition appears (each line wakes the factory manager) and nothing while it persists.
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: factory-watch [--once] [--interval SECONDS] [--cycles N] [--runs FILE]
+
+Watches the project and prints one line when a condition starts, never again while it lasts:
+  disk      free disk space below the reserve (disk_reserve_gb, default 5 GB)
+  temp      free temporary space below temp_min_gb (default 1 GB)
+  ci        a CI run in progress for more than three times the median duration of its
+            workflow's successful runs (at least three of them)
+  stall     a builder worktree with no commit, change or reflog entry for stall_minutes
+            (default 30)
+  merged    a worktree merged into its base (or with no changes), clean, and idle for
+            merged_grace_minutes (default 15), not yet removed
+A condition that clears and comes back prints again.
+
+  --once        check once and exit; what was reported is remembered in
+                <project>/.factory/watch-seen between runs
+  --interval S  seconds between checks (default 60)
+  --cycles N    stop after N checks (tests)
+  --runs FILE   `gh run list --json databaseId,workflowName,status,conclusion,createdAt,startedAt,updatedAt,url`
+                recorded output, instead of calling gh (tests)
+
+Without --once it loops, silent while the factory is not running (state.json running: false).
+It polls CI every ci_poll_seconds (default 300). Settings: <project>/.factory/settings.json.
+Project: $CLAUDE_PROJECT_DIR, else the repository's main checkout. FACTORY_NOW sets the time and
+FACTORY_TEST=1 with FACTORY_TEST_FREE_DISK_MB / FACTORY_TEST_FREE_TEMP_MB the free space (tests).
+USAGE
+}
+
+root=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+# shellcheck disable=SC1091 # lib/common.sh, checked on its own
+. "$root/lib/common.sh"
+
+once=0 interval=60 cycles=0 runs_file=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --once) once=1 ;;
+    --interval) interval=${2:?}; shift ;;
+    --cycles) cycles=${2:?}; shift ;;
+    --runs) runs_file=${2:?}; shift ;;
+    -h | --help) usage; exit 0 ;;
+    *) echo "factory-watch: unknown argument $1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+num_re='^[0-9]+$'
+[[ "$interval" =~ $num_re && "$cycles" =~ $num_re ]] || { echo "factory-watch: --interval and --cycles need numbers" >&2; exit 2; }
+
+project=$(factory_project)
+fdir="$project/.factory"
+seen_file="$fdir/watch-seen"
+
+now_epoch() { date -u -d "$(factory_now)" +%s; }
+gb_to_mb() { awk -v g="$1" 'BEGIN { printf "%d", g * 1024 }'; }
+free_mb() { df -Pm "$1" 2>/dev/null | awk 'NR == 2 { print $4 }'; }
+
+# setting <key> <default>: a number from .factory/settings.json, else the default
+setting() {
+  local v
+  v=$(factory_settings "$project" | jq -r --arg k "$1" '.[$k] // empty | select(type == "number") | tostring')
+  printf '%s\n' "${v:-$2}"
+}
+
+# Each check appends "<key><TAB><line>" to $found.
+
+check_space() {
+  local reserve_mb temp_min_mb free_disk="" free_temp="" v d
+  reserve_mb=$(gb_to_mb "$(setting disk_reserve_gb 5)")
+  temp_min_mb=$(gb_to_mb "$(setting temp_min_gb 1)")
+  for d in "$project" "$project/.worktrees" "$project/.claude/worktrees"; do
+    [ -d "$d" ] || continue
+    v=$(free_mb "$d" || true)
+    if [ -n "$v" ] && { [ -z "$free_disk" ] || [ "$v" -lt "$free_disk" ]; }; then free_disk=$v; fi
+  done
+  free_temp=$(free_mb "${TMPDIR:-/tmp}" || true)
+  if [ "${FACTORY_TEST:-}" = 1 ]; then
+    free_disk=${FACTORY_TEST_FREE_DISK_MB:-$free_disk}
+    free_temp=${FACTORY_TEST_FREE_TEMP_MB:-$free_temp}
+  fi
+  if [[ "$free_disk" =~ $num_re ]] && [ "$free_disk" -lt "$reserve_mb" ]; then
+    printf 'disk\tfactory-watch: disk: free disk is %s MB, below the %s MB reserve; stop starting builders and free space\n' "$free_disk" "$reserve_mb" >>"$found"
+  fi
+  if [[ "$free_temp" =~ $num_re ]] && [ "$free_temp" -lt "$temp_min_mb" ]; then
+    printf 'temp\tfactory-watch: temp: free temporary space is %s MB, below the %s MB minimum; clean leaked test directories\n' "$free_temp" "$temp_min_mb" >>"$found"
+  fi
+}
+
+# check_ci: sets ci_polled=1 when the run list was read
+check_ci() {
+  local runs="" now
+  if [ -n "$runs_file" ]; then
+    runs=$(jq -c . "$runs_file" 2>/dev/null) || return 0
+  else
+    command -v gh >/dev/null 2>&1 || return 0
+    runs=$(cd "$project" && timeout 30 gh run list --limit 100 \
+      --json databaseId,workflowName,status,conclusion,createdAt,startedAt,updatedAt,url 2>/dev/null) || return 0
+  fi
+  ci_polled=1
+  now=$(now_epoch)
+  jq -r --argjson now "$now" '
+    def secs($t): ($t | fromdateiso8601);
+    def median: sort | length as $n | if $n % 2 == 1 then .[($n - 1) / 2] else (.[$n / 2 - 1] + .[$n / 2]) / 2 end;
+    if type != "array" then empty else
+    ([.[] | select(.status == "completed" and .conclusion == "success" and .startedAt and .updatedAt)
+      | {w: .workflowName, d: (secs(.updatedAt) - secs(.startedAt))}]
+     | group_by(.w) | map(select(length >= 3) | {key: .[0].w, value: (map(.d) | median)}) | from_entries) as $med
+    | .[] | select(.status == "in_progress" and .startedAt and ($med[.workflowName] != null))
+    | (($now - secs(.startedAt))) as $el | ($med[.workflowName] * 3) as $limit
+    | select($el > $limit)
+    | "ci:\(.databaseId)\tfactory-watch: ci: run #\(.databaseId) of \(.workflowName) has run \($el | floor) s, past 3 x its median \($med[.workflowName] | floor) s (\($limit | floor) s): \(.url)"
+    end' <<<"$runs" >>"$found" 2>/dev/null || true
+}
+
+check_worktrees() {
+  local stall_min grace_min now wt_dirs=() d p line b base head branch merged dirty last t idle rel f
+  stall_min=$(setting stall_minutes 30)
+  grace_min=$(setting merged_grace_minutes 15)
+  now=$(now_epoch)
+  for d in "$project/.worktrees" "$project/.claude/worktrees"; do [ -d "$d" ] && wt_dirs+=("$d"); done
+  [ ${#wt_dirs[@]} -gt 0 ] || return 0
+
+  # base refs a worktree can be merged into: the default branch and the integration branches
+  local bases=()
+  while IFS= read -r b; do [ -n "$b" ] && bases+=("$b"); done < <(
+    {
+      git -C "$project" symbolic-ref -q refs/remotes/origin/HEAD 2>/dev/null || true
+      for b in main master; do
+        git -C "$project" rev-parse -q --verify "refs/heads/$b" >/dev/null 2>&1 && echo "refs/heads/$b"
+        git -C "$project" rev-parse -q --verify "refs/remotes/origin/$b" >/dev/null 2>&1 && echo "refs/remotes/origin/$b"
+      done
+      git -C "$project" for-each-ref --format='%(refname)' refs/heads/spec refs/remotes/origin/spec \
+        refs/heads/ticket refs/remotes/origin/ticket 2>/dev/null || true
+    } | sort -u
+  )
+
+  # branches with a running assignment: a builder, never "merged, not removed" even while it is still empty
+  local assigned=""
+  if [ -f "$fdir/state.json" ]; then
+    assigned=$(jq -r '(.assignments // {}) | .[] | .branch // empty' "$fdir/state.json" 2>/dev/null || true)
+  fi
+
+  while IFS= read -r line; do
+    p=${line#worktree }
+    for d in "${wt_dirs[@]}"; do
+      case "$p" in "$d"/*) ;; *) continue ;; esac
+      [ -d "$p" ] || continue
+      branch=$(git -C "$p" symbolic-ref -q --short HEAD 2>/dev/null || true)
+      case "$branch" in main | master | spec/* | ticket/*) continue ;; esac
+      head=$(git -C "$p" rev-parse -q --verify HEAD 2>/dev/null || true)
+      merged=0
+      for base in "${bases[@]}"; do
+        [ -n "$branch" ] && [ "$base" = "refs/heads/$branch" ] && continue
+        if [ -n "$head" ] && git -C "$p" merge-base --is-ancestor "$head" "$base" 2>/dev/null; then merged=1; break; fi
+      done
+      dirty=0
+      [ -n "$(git -C "$p" --no-optional-locks status --porcelain 2>/dev/null || true)" ] && dirty=1
+
+      # last activity: newest of the tip's commit time, the worktree's creation (.git file), its
+      # reflog, and every changed or untracked path
+      last=$(git -C "$p" log -1 --format=%ct 2>/dev/null || echo 0)
+      for f in "$p/.git" "$(git -C "$p" rev-parse --absolute-git-dir 2>/dev/null || echo /nonexistent)/logs/HEAD"; do
+        t=$(stat -c %Y "$f" 2>/dev/null || echo 0)
+        [ "$t" -gt "$last" ] && last=$t
+      done
+      while IFS= read -r rel; do
+        [ -n "$rel" ] || continue
+        rel=${rel:3}
+        rel=${rel##* -> }
+        t=$(stat -c %Y "$p/${rel%/}" 2>/dev/null || echo 0)
+        [ "$t" -gt "$last" ] && last=$t
+      done < <(git -C "$p" --no-optional-locks status --porcelain 2>/dev/null || true)
+      idle=$(((now - last) / 60))
+
+      local name=${p#"$project"/} is_assigned=0
+      [ -n "$branch" ] && grep -qxF -- "$branch" <<<"$assigned" && is_assigned=1
+      if [ $merged = 1 ] && [ $dirty = 0 ] && [ $is_assigned = 0 ]; then
+        if [ "$idle" -ge "$grace_min" ]; then
+          printf 'merged:%s\tfactory-watch: merged: worktree %s%s is merged (or has no changes) and has not been removed; remove it\n' \
+            "${branch:-$name}" "$name" "${branch:+ ($branch)}" >>"$found"
+        fi
+      elif [ "$idle" -ge "$stall_min" ]; then
+        printf 'stall:%s\tfactory-watch: stall: worktree %s%s has shown no progress for %s min (stall time %s min)\n' \
+          "${branch:-$name}" "$name" "${branch:+ ($branch)}" "$idle" "$stall_min" >>"$found"
+      fi
+    done
+  done < <(git -C "$project" worktree list --porcelain 2>/dev/null | grep '^worktree ' || true)
+}
+
+# cycle: runs every check, prints the lines whose keys were not reported last time, and
+# remembers the keys now present. A kind not checked this cycle (CI between polls) keeps its keys.
+last_ci=0
+cycle() {
+  local ci_polled=0 found prev now
+  found=$(mktemp "${TMPDIR:-/tmp}/factory-watch.XXXXXX")
+  now=$(date +%s)
+  check_space
+  check_worktrees
+  if [ "$once" = 1 ] || [ -n "$runs_file" ] || [ $((now - last_ci)) -ge "$(setting ci_poll_seconds 300)" ]; then
+    check_ci
+    [ $ci_polled = 1 ] && last_ci=$now
+  fi
+  prev=""
+  [ -f "$seen_file" ] && prev=$(cat "$seen_file")
+  [ -d "$fdir" ] || { mkdir -p "$fdir"; factory_exclude "$project" /.factory/; }
+  {
+    cut -f1 "$found"
+    [ $ci_polled = 1 ] || grep '^ci:' <<<"$prev" || true
+  } | sort -u >"$seen_file.new"
+  while IFS=$'\t' read -r key text; do
+    grep -qxF -- "$key" <<<"$prev" || printf '%s\n' "$text"
+  done <"$found"
+  mv -f "$seen_file.new" "$seen_file"
+  rm -f "$found"
+}
+
+running() {
+  [ -f "$fdir/state.json" ] || return 0
+  [ "$(jq -r 'if .running == false then "no" else "yes" end' "$fdir/state.json" 2>/dev/null || echo yes)" = yes ]
+}
+
+if [ "$once" = 1 ]; then
+  cycle
+  exit 0
+fi
+
+rm -f "$seen_file"
+i=0
+while :; do
+  if running; then cycle; fi
+  i=$((i + 1))
+  [ "$cycles" -gt 0 ] && [ "$i" -ge "$cycles" ] && break
+  sleep "$interval"
+done

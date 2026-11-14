@@ -331,6 +331,23 @@ code=0; out=$("$fi_" merge --ticket 17 --branch t17-e --worktree "$p/.claude/wor
 [ "$code" = 4 ] && jq -e '.result == "diverged"' <<<"$out" >/dev/null || fail "diverged ($code): $out"; ok
 tail -n 1 "$p/.factory/ledger.jsonl" | jq -e '.event == "merge" and .ticket == 17 and .result == "diverged" and (.duration_s | type == "number")' >/dev/null || fail "divergence recorded as a merge event: $(tail -n 1 "$p/.factory/ledger.jsonl")"; ok
 
+# --- a standalone ticket integrates into its own branch ticket/<n>-<slug>, made from main ---
+out=$("$fi_" ensure --spec 7 --branch ticket/7-fix-the-typo)
+twt="$p/.claude/worktrees/ticket-7"
+jq -e --arg wt "$twt" '. == {spec: 7, branch: "ticket/7-fix-the-typo", worktree: $wt, created: true}' <<<"$out" >/dev/null || fail "standalone ensure output: $out"; ok
+[ "$(o rev-parse ticket/7-fix-the-typo)" = "$(o rev-parse main)" ] || fail "standalone branch pushed from main"; ok
+"$st" show | jq -e --arg wt "$twt" '.integration["7"] | .branch == "ticket/7-fix-the-typo" and .worktree == $wt' >/dev/null || fail "standalone integration in state"; ok
+git -C "$p" worktree add -q -b t7-fix-the-typo "$p/.claude/worktrees/agent-7" origin/ticket/7-fix-the-typo
+echo fixed >"$p/.claude/worktrees/agent-7/g.txt"
+git -C "$p/.claude/worktrees/agent-7" add g.txt && git -C "$p/.claude/worktrees/agent-7" commit -q -m "ticket 7"
+"$st" assign --ticket 7 --spec 7 --role implementer --model sonnet --effort high --branch t7-fix-the-typo
+out=$("$fi_" merge --ticket 7 --branch t7-fix-the-typo --worktree "$p/.claude/worktrees/agent-7" --title "Fix the typo")
+jq -e '.result == "merged" and .integration_branch == "ticket/7-fix-the-typo" and .worktree_removed and .branch_deleted' <<<"$out" >/dev/null || fail "standalone merge: $out"; ok
+[ "$(o log -1 --format=%s ticket/7-fix-the-typo)" = "Merge t7-fix-the-typo into ticket/7-fix-the-typo: Fix the typo (#7)" ] || fail "standalone merge commit"; ok
+[ "$(git -C "$p" rev-parse main)" = "$(o rev-parse main)" ] && ! o cat-file -e main:g.txt 2>/dev/null || fail "main untouched by a standalone merge"; ok
+if "$fi_" ensure --spec 8 --branch ticket/7-fix-the-typo 2>/dev/null; then fail "ensure accepted another ticket's branch"; fi; ok
+if "$fi_" ensure --spec 8 --branch feature/8-x 2>/dev/null; then fail "ensure accepted a branch outside spec/ and ticket/"; fi; ok
+
 # --- refusals ---
 if "$fi_" merge --ticket 99 --branch t99-x 2>/dev/null; then fail "merge of an unassigned ticket"; fi; ok
 

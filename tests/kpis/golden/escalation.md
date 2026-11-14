@@ -27,6 +27,12 @@ Ledger: 11 events, 2026-02-01T08:00:00Z to 2026-02-01T10:20:00Z.
 | Tests added | 6 |
 | Review findings per ticket | n/a |
 
+### Escalations
+
+| Ticket | From | To | Reason |
+| --- | --- | --- | --- |
+| #5 | implementer | implementer-deep | gate failed twice |
+
 ### Rework per ticket
 
 | Ticket | Failed gates | Review send-backs | Escalations | Total |

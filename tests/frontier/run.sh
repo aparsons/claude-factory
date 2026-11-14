@@ -95,6 +95,70 @@ check "recorded: it unblocks the other twelve" '.ready[0].unblocks == 12 and .re
 check "recorded: the spec is listed once, not as a ticket" '[.specs[].number] == [1] and (.specs[0].tickets == 13)'
 check "recorded: blocked tickets name their blockers" '.blocked[] | select(.number == 5) | (.blocked_by | sort) == [3, 4]'
 
+# --- standalone tickets: a parent-less issue without sub-issues that is not marked as a spec ---
+run "$fx/standalone"
+check "standalone: ranked with spec tickets by the same rules" '[.ready[].number] == [60, 71, 62]'
+check "standalone bug is a ticket on its own integration branch" \
+  '.ready[0] | .number == 60 and .standalone and .spec == 60 and .branch == "t60-crash-on-empty-input"
+     and .spec_branch == "ticket/60-crash-on-empty-input" and .role == "implementer" and .priority_label == "priority:high"'
+check "spec ticket is not standalone" '.ready[] | select(.number == 71) | (.standalone | not) and .spec == 70 and .spec_branch == "spec/70-widgets"'
+check "standalone blocked by another issue" '.blocked[] | select(.number == 61) | .status == "blocked" and .blocked_by == [60] and .standalone'
+check "standalone blocker counts as unblocking" '.ready[0].unblocks == 1'
+check "spec with tickets stays a spec" '.specs[] | select(.number == 70) | .status == "ready" and .tickets == 2 and (.standalone | not)'
+check "spec marked by title or body without sub-issues needs /to-tickets" \
+  '.needs_tickets == [80, 81] and ([.specs[] | select(.status == "needs-tickets") | .number] == [80, 81])'
+check "specs are not tickets, standalone or not" '[.ready[].number, .blocked[].number] | (index(70), index(80), index(81)) == null'
+check "a standalone ticket is its own one-ticket entry in specs" \
+  '[.specs[] | select(.standalone) | {number, tickets, status, branch}] == [
+     {number: 60, tickets: 1, status: "ready", branch: "ticket/60-crash-on-empty-input"},
+     {number: 61, tickets: 1, status: "blocked", branch: "ticket/61-retry-the-flaky-download"},
+     {number: 62, tickets: 1, status: "ready", branch: "ticket/62-typo-in-the-help-text"}]'
+cat >"$tmp/state-standalone.json" <<'JSON'
+{"assignments": {"62": {"ticket": 62, "spec": 62, "role": "implementer", "model": "sonnet", "effort": "high", "branch": "t62-typo", "started": "2026-01-01T00:00:00Z"}},
+ "merged": {"60": {"ticket": 60, "spec": 60, "branch": "t60-crash-on-empty-input", "commit": "abc"}},
+ "integration": {"61": {"spec": 61, "branch": "ticket/61-custom", "status": "active"}}}
+JSON
+run "$fx/standalone" "$tmp/state-standalone.json"
+check "merged standalone ticket unblocks and is complete" \
+  '([.ready[].number] == [71, 61]) and (.specs[] | select(.number == 60) | .status == "complete" and .merged == 1)'
+check "running standalone ticket" '[.running[].number] == [62] and (.specs[] | select(.number == 62) | .status == "running")'
+check "recorded standalone integration branch wins" '.ready[] | select(.number == 61) | .spec_branch == "ticket/61-custom"'
+txt=$("$tool" --from "$fx/standalone" --state "$tmp/none.json")
+for s in "1. #60 (standalone) implementer" "#61 (standalone) blocked by #60" "#81 needs-tickets (needs /to-tickets)" "#60 ready (standalone)"; do
+  [[ "$txt" == *"$s"* ]] || fail "standalone text output lacks '$s': $txt"
+  pass=$((pass + 1))
+done
+
+# --- ticket-level blocking over a spec-level link (spec #90 is blocked by spec #100) ---
+run "$fx/spec-link"
+check "spec link: a ticket with its own link to a finished ticket of the blocking spec starts" '[.ready[].number] | index(91) != null'
+check "spec link: it is no longer held by the spec's link" '[.blocked[].number] | index(91) == null'
+check "spec link: a ticket with its own open link to the blocking spec is blocked by that ticket, not by the spec" \
+  '.blocked[] | select(.number == 92) | .status == "blocked" and .blocked_by == [102] and (.blocked_by_spec == [])'
+check "spec link: a ticket with no links of its own is spec-blocked, naming the spec" \
+  '.blocked[] | select(.number == 93) | .status == "spec-blocked" and .blocked_by == [100] and .blocked_by_spec == [100]'
+check "spec link: a ticket linked only to a sibling keeps its own blocker" '.blocked[] | select(.number == 94) | .status == "blocked" and .blocked_by == [93]'
+check "spec link: a link to a ticket outside the blocking spec does not lift it" \
+  '.blocked[] | select(.number == 95) | .status == "spec-blocked" and .blocked_by_spec == [100]'
+check "spec link: the blocking spec's own ticket is ready" '[.ready[].number] == [91, 102] or [.ready[].number] == [102, 91]'
+check "spec link: a spec with a ticket let through is ready, not blocked" '.specs[] | select(.number == 90) | .status == "ready" and .ready == 1'
+txt=$("$tool" --from "$fx/spec-link" --state "$tmp/none.json")
+for s in "#93 (spec #90) spec-blocked by spec #100" "#92 (spec #90) blocked by #102" "#91 (spec #90) implementer"; do
+  [[ "$txt" == *"$s"* ]] || fail "spec-link text output lacks '$s': $txt"
+  pass=$((pass + 1))
+done
+# a spec's link still holds when no ticket has a link of its own (every ticket of #90 reported spec-blocked)
+jq 'map(if .parent.number == 90 then .blockedBy = {nodes: [], totalCount: 0} else . end)' "$fx/spec-link/issues.json" >"$tmp/issues-unlinked.json"
+mkdir -p "$tmp/unlinked" && mv "$tmp/issues-unlinked.json" "$tmp/unlinked/issues.json"
+run "$tmp/unlinked"
+check "spec link: with no ticket linked, the spec link holds all its tickets" \
+  '([.blocked[] | select(.spec == 90 and .status == "spec-blocked") | .number] | sort) == [91, 92, 93, 94, 95] and (.specs[] | select(.number == 90) | .status == "blocked")'
+# the blocking spec is closed or merged away: nothing holds
+jq 'map(if .number == 90 then .blockedBy = {nodes: [{id: "I_100", number: 100, state: "CLOSED", title: "x", url: "u"}], totalCount: 1} else . end)' "$fx/spec-link/issues.json" >"$tmp/closed.json"
+mkdir -p "$tmp/closed" && mv "$tmp/closed.json" "$tmp/closed/issues.json"
+run "$tmp/closed"
+check "spec link: a closed blocking spec holds nothing" '[.blocked[] | select(.status == "spec-blocked")] == [] and ([.ready[].number] | index(93) != null)'
+
 # --- text output ---
 txt=$("$tool" --from "$fx/graph" --state "$tmp/none.json")
 for s in "Frontier: 7 ready" "1. #15 (spec #10) implementer-deep opus/high" "[security]" "[priority priority:high]" "#30 needs-tickets (needs /to-tickets)" "#12 (spec #10) blocked by #11"; do

@@ -1,0 +1,1 @@
+[{"databaseId":105,"workflowName":"Check","name":"Check","status":"completed","conclusion":"failure","attempt":2,"headBranch":"spec/1-x","headSha":"abc123","url":"https://github.com/o/r/actions/runs/105","createdAt":"2026-01-01T10:00:00Z","startedAt":"2026-01-01T10:00:00Z","updatedAt":"2026-01-01T10:09:00Z","event":"push"}]

@@ -1,0 +1,6 @@
+{"ts":"2026-11-12T22:00:00Z","event":"assign","ticket":11,"spec":9,"role":"implementer","model":"sonnet","effort":"high","branch":"t11-running","session_id":null}
+{"ts":"2026-11-12T22:01:00Z","event":"assign","ticket":12,"spec":9,"role":"implementer","model":"sonnet","effort":"high","branch":"t12-stalled","session_id":null}
+{"ts":"2026-11-12T22:02:00Z","event":"assign","ticket":13,"spec":9,"role":"implementer","model":"sonnet","effort":"high","branch":"t13-fresh","session_id":null}
+{"ts":"2026-11-12T23:00:00Z","event":"stall","worktree":"/w/agent-11","minutes":45}
+{"ts":"2026-11-13T00:00:00Z","event":"gate","ticket":12,"spec":9,"result":"pass","tests_added":2,"session_id":null}
+{"ts":"2026-11-13T10:40:00Z","event":"gate","ticket":13,"spec":9,"result":"pass","tests_added":1,"session_id":null}

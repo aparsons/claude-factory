@@ -26,7 +26,7 @@ fails() { # fails <name> <command...>: must exit 2 without changing the state
 }
 
 # --- empty state ---
-[ "$("$st" show | jq -c .)" = '{"version":1,"running":false,"assignments":{},"merged":{},"integration":{},"estimates":{}}' ] ||
+[ "$("$st" show | jq -c .)" = '{"version":1,"running":false,"assignments":{},"merged":{},"integration":{},"estimates":{},"escalations":{}}' ] ||
   fail "empty state: $("$st" show)"
 pass=$((pass + 1))
 [ ! -e "$tmp/proj/.factory" ] || fail "show must not create the factory directory"
@@ -59,7 +59,7 @@ lastev "unassign event" '.event == "unassign" and .ticket == 13 and .spec == 3 a
 fails "unassign of an unknown ticket" "$st" unassign --ticket 13
 
 # --- gate and merge ---
-"$st" gate --ticket 12 --result fail --tests-added 2
+"$st" gate --ticket 12 --result fail --tests-added 2 >/dev/null
 lastev "gate event" '.event == "gate" and .ticket == 12 and .spec == 3 and .result == "fail" and .tests_added == 2'
 fails "gate needs pass or fail" "$st" gate --ticket 12 --result maybe
 "$st" merge --ticket 12 --commit abc123

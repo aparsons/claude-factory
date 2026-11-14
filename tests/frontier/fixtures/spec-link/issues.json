@@ -1,0 +1,432 @@
+[
+  {
+    "number": 90,
+    "title": "Spec: the second spec",
+    "state": "OPEN",
+    "createdAt": "2026-11-13T00:00:00Z",
+    "labels": [
+      {
+        "id": "L1",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "0e8a16"
+      }
+    ],
+    "milestone": null,
+    "assignees": [],
+    "parent": null,
+    "blockedBy": {
+      "nodes": [
+        {
+          "id": "I_100",
+          "number": 100,
+          "state": "OPEN",
+          "title": "issue 100",
+          "url": "https://github.com/o/r/issues/100"
+        }
+      ],
+      "totalCount": 1
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssues": {
+      "nodes": [
+        {
+          "id": "I_91",
+          "number": 91,
+          "state": "OPEN",
+          "title": "issue 91",
+          "url": "https://github.com/o/r/issues/91"
+        },
+        {
+          "id": "I_92",
+          "number": 92,
+          "state": "OPEN",
+          "title": "issue 92",
+          "url": "https://github.com/o/r/issues/92"
+        },
+        {
+          "id": "I_93",
+          "number": 93,
+          "state": "OPEN",
+          "title": "issue 93",
+          "url": "https://github.com/o/r/issues/93"
+        },
+        {
+          "id": "I_94",
+          "number": 94,
+          "state": "OPEN",
+          "title": "issue 94",
+          "url": "https://github.com/o/r/issues/94"
+        },
+        {
+          "id": "I_95",
+          "number": 95,
+          "state": "OPEN",
+          "title": "issue 95",
+          "url": "https://github.com/o/r/issues/95"
+        }
+      ],
+      "totalCount": 5
+    },
+    "subIssuesSummary": {
+      "total": 5,
+      "completed": 0,
+      "percentCompleted": 0
+    }
+  },
+  {
+    "number": 91,
+    "title": "Own link to a finished ticket of the blocking spec",
+    "state": "OPEN",
+    "createdAt": "2026-11-13T00:01:00Z",
+    "labels": [
+      {
+        "id": "L1",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "0e8a16"
+      }
+    ],
+    "milestone": null,
+    "assignees": [],
+    "parent": {
+      "id": "I_90",
+      "number": 90,
+      "state": "OPEN",
+      "title": "issue 90",
+      "url": "https://github.com/o/r/issues/90"
+    },
+    "blockedBy": {
+      "nodes": [
+        {
+          "id": "I_101",
+          "number": 101,
+          "state": "CLOSED",
+          "title": "issue 101",
+          "url": "https://github.com/o/r/issues/101"
+        }
+      ],
+      "totalCount": 1
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "total": 0,
+      "completed": 0,
+      "percentCompleted": 0
+    }
+  },
+  {
+    "number": 92,
+    "title": "Own link to an open ticket of the blocking spec",
+    "state": "OPEN",
+    "createdAt": "2026-11-13T00:02:00Z",
+    "labels": [
+      {
+        "id": "L1",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "0e8a16"
+      }
+    ],
+    "milestone": null,
+    "assignees": [],
+    "parent": {
+      "id": "I_90",
+      "number": 90,
+      "state": "OPEN",
+      "title": "issue 90",
+      "url": "https://github.com/o/r/issues/90"
+    },
+    "blockedBy": {
+      "nodes": [
+        {
+          "id": "I_102",
+          "number": 102,
+          "state": "OPEN",
+          "title": "issue 102",
+          "url": "https://github.com/o/r/issues/102"
+        }
+      ],
+      "totalCount": 1
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "total": 0,
+      "completed": 0,
+      "percentCompleted": 0
+    }
+  },
+  {
+    "number": 93,
+    "title": "No links of its own",
+    "state": "OPEN",
+    "createdAt": "2026-11-13T00:03:00Z",
+    "labels": [
+      {
+        "id": "L1",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "0e8a16"
+      }
+    ],
+    "milestone": null,
+    "assignees": [],
+    "parent": {
+      "id": "I_90",
+      "number": 90,
+      "state": "OPEN",
+      "title": "issue 90",
+      "url": "https://github.com/o/r/issues/90"
+    },
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [
+        {
+          "id": "I_94",
+          "number": 94,
+          "state": "OPEN",
+          "title": "issue 94",
+          "url": "https://github.com/o/r/issues/94"
+        }
+      ],
+      "totalCount": 1
+    },
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "total": 0,
+      "completed": 0,
+      "percentCompleted": 0
+    }
+  },
+  {
+    "number": 94,
+    "title": "Linked to a sibling only",
+    "state": "OPEN",
+    "createdAt": "2026-11-13T00:04:00Z",
+    "labels": [
+      {
+        "id": "L1",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "0e8a16"
+      }
+    ],
+    "milestone": null,
+    "assignees": [],
+    "parent": {
+      "id": "I_90",
+      "number": 90,
+      "state": "OPEN",
+      "title": "issue 90",
+      "url": "https://github.com/o/r/issues/90"
+    },
+    "blockedBy": {
+      "nodes": [
+        {
+          "id": "I_93",
+          "number": 93,
+          "state": "OPEN",
+          "title": "issue 93",
+          "url": "https://github.com/o/r/issues/93"
+        }
+      ],
+      "totalCount": 1
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "total": 0,
+      "completed": 0,
+      "percentCompleted": 0
+    }
+  },
+  {
+    "number": 95,
+    "title": "Linked to a closed sibling outside the blocking spec",
+    "state": "OPEN",
+    "createdAt": "2026-11-13T00:05:00Z",
+    "labels": [
+      {
+        "id": "L1",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "0e8a16"
+      }
+    ],
+    "milestone": null,
+    "assignees": [],
+    "parent": {
+      "id": "I_90",
+      "number": 90,
+      "state": "OPEN",
+      "title": "issue 90",
+      "url": "https://github.com/o/r/issues/90"
+    },
+    "blockedBy": {
+      "nodes": [
+        {
+          "id": "I_96",
+          "number": 96,
+          "state": "CLOSED",
+          "title": "issue 96",
+          "url": "https://github.com/o/r/issues/96"
+        }
+      ],
+      "totalCount": 1
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "total": 0,
+      "completed": 0,
+      "percentCompleted": 0
+    }
+  },
+  {
+    "number": 100,
+    "title": "Spec: the first spec",
+    "state": "OPEN",
+    "createdAt": "2026-11-13T00:00:00Z",
+    "labels": [
+      {
+        "id": "L1",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "0e8a16"
+      }
+    ],
+    "milestone": null,
+    "assignees": [],
+    "parent": null,
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [
+        {
+          "id": "I_90",
+          "number": 90,
+          "state": "OPEN",
+          "title": "issue 90",
+          "url": "https://github.com/o/r/issues/90"
+        },
+        {
+          "id": "I_92",
+          "number": 92,
+          "state": "OPEN",
+          "title": "issue 92",
+          "url": "https://github.com/o/r/issues/92"
+        }
+      ],
+      "totalCount": 2
+    },
+    "subIssues": {
+      "nodes": [
+        {
+          "id": "I_101",
+          "number": 101,
+          "state": "CLOSED",
+          "title": "issue 101",
+          "url": "https://github.com/o/r/issues/101"
+        },
+        {
+          "id": "I_102",
+          "number": 102,
+          "state": "OPEN",
+          "title": "issue 102",
+          "url": "https://github.com/o/r/issues/102"
+        }
+      ],
+      "totalCount": 2
+    },
+    "subIssuesSummary": {
+      "total": 2,
+      "completed": 1,
+      "percentCompleted": 0
+    }
+  },
+  {
+    "number": 102,
+    "title": "Open ticket of the blocking spec",
+    "state": "OPEN",
+    "createdAt": "2026-11-13T00:02:00Z",
+    "labels": [
+      {
+        "id": "L1",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "0e8a16"
+      }
+    ],
+    "milestone": null,
+    "assignees": [],
+    "parent": {
+      "id": "I_100",
+      "number": 100,
+      "state": "OPEN",
+      "title": "issue 100",
+      "url": "https://github.com/o/r/issues/100"
+    },
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [
+        {
+          "id": "I_92",
+          "number": 92,
+          "state": "OPEN",
+          "title": "issue 92",
+          "url": "https://github.com/o/r/issues/92"
+        }
+      ],
+      "totalCount": 1
+    },
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "total": 0,
+      "completed": 0,
+      "percentCompleted": 0
+    }
+  }
+]

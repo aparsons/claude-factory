@@ -1,0 +1,1 @@
+{"jobs":[{"name":"check","conclusion":"failure","steps":[{"name":"Install shellcheck and jq","conclusion":"failure"}]}]}

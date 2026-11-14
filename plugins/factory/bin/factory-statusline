@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# factory-statusline: a Claude Code status line command that records the plan usage the status
+# line receives (5-hour and 7-day percentages and reset times) in <project>/.factory/usage.json,
+# where factory-budget and factory-kpis read it. It never fails: a status line that errors
+# is a broken prompt.
+set -uo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: factory-statusline [--then COMMAND]
+
+Reads the status line JSON on stdin. Records its rate_limits (five_hour and seven_day, each
+used_percentage and resets_at) in <project>/.factory/usage.json when that directory exists,
+that is, in a project where the factory runs. Prints a short status line, or the output of
+COMMAND, your own status line command, which gets the same input.
+
+Install, beside your own, in ~/.claude/settings.json:
+  "statusLine": {"type": "command", "command": "factory-statusline"}
+  "statusLine": {"type": "command", "command": "factory-statusline --then ~/.claude/my-statusline.sh"}
+(factory-statusline is in ${CLAUDE_PLUGIN_ROOT}/bin; use that path if it is not on PATH.)
+Changing your settings is yours to do; the factory does not do it.
+
+Only Claude.ai subscribers get rate limits, and only after the first response of a session;
+without them nothing is recorded. FACTORY_NOW overrides the time (tests).
+USAGE
+}
+
+then_cmd=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --then) shift; then_cmd="$*"; break ;;
+    -h | --help) usage; exit 0 ;;
+    *) echo "factory-statusline: unknown argument $1" >&2; usage >&2; exit 0 ;;
+  esac
+done
+
+root=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+# shellcheck disable=SC1091 # lib/common.sh, checked on its own
+. "$root/lib/common.sh"
+
+input=$(cat || true)
+
+record() {
+  jq -e 'type == "object" and ((.rate_limits | type) == "object")' >/dev/null 2>&1 <<<"$input" || return 0
+  local project cwd file new tmp
+  if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
+    project=$CLAUDE_PROJECT_DIR
+  else
+    cwd=$(jq -r '.workspace.project_dir // .workspace.current_dir // .cwd // empty' <<<"$input")
+    [ -n "$cwd" ] && [ -d "$cwd" ] || return 0
+    project=$(cd "$cwd" && factory_project) || return 0
+  fi
+  [ -d "$project/.factory" ] || return 0
+  file="$project/.factory/usage.json"
+  # each window is kept as the input gives it, merged over what is already recorded
+  new=$(jq -c --arg now "$(factory_now)" --slurpfile old <(if [ -f "$file" ]; then jq -c 'if type == "object" then . else {} end' "$file" 2>/dev/null || echo '{}'; else echo '{}'; fi) '
+    ((.rate_limits | with_entries(select(.key == "five_hour" or .key == "seven_day") | select(.value | type == "object" and (.used_percentage | type) == "number")
+       | .value |= {used_percentage, resets_at}))) as $w
+    | select($w != {})
+    | {rate_limits: ((($old[0].rate_limits // {}) + $w)), recorded_at: $now}' <<<"$input") || return 0
+  [ -n "$new" ] || return 0
+  tmp=$(mktemp "$project/.factory/.usage.XXXXXX") || return 0
+  if printf '%s\n' "$new" >"$tmp"; then mv -f "$tmp" "$file"; else rm -f "$tmp"; fi
+}
+record 2>/dev/null || true
+
+if [ -n "$then_cmd" ]; then
+  printf '%s' "$input" | sh -c "$then_cmd" || true
+else
+  line=$(jq -r '
+    def pct: if . == null then "?" else "\(.)%" end;
+    "5h \(.rate_limits.five_hour.used_percentage | pct) 7d \(.rate_limits.seven_day.used_percentage | pct)"' <<<"$input" 2>/dev/null) || line=""
+  printf '%s\n' "${line:-factory}"
+fi
+exit 0
