@@ -24,12 +24,12 @@ Usage: factory-rhythm <command> [options]
         the heartbeat range, shortened to land on the digest; null when not running or idle),
         digest_due, digest_in_seconds, digest_interval_min, last_digest, waiting_on_user (specs
         needing /to-tickets, blocked specs, tickets stopped for the user, a red default branch),
-        budget (plan usage windows past their thresholds, with the action).
+        budget (the findings of factory-budget: a plan usage window or a spec past its limit, with the action).
         --frontier FILE reads a recorded `factory-frontier --json` (tests); otherwise it runs it.
 
-Settings (.factory/settings.json): report_interval_min (60), heartbeat_minutes ([20, 30]),
-budget_five_hour_pct (80), budget_seven_day_pct (85). Reads .factory/state.json, ledger.jsonl and
-usage.json. FACTORY_NOW overrides the time (tests).
+Settings (.factory/settings.json): report_interval_min (60), heartbeat_minutes ([20, 30]); the
+budget limits are factory-budget's. Reads .factory/state.json and ledger.jsonl, and runs factory-budget.
+FACTORY_NOW overrides the time (tests).
 USAGE
 }
 
@@ -118,21 +118,20 @@ next)
   fi
   state='{}'
   [ ! -f "$dir/state.json" ] || state=$(jq -c . "$dir/state.json" 2>/dev/null || echo '{}')
-  usage_json='null'
-  [ ! -f "$dir/usage.json" ] || usage_json=$(jq -c . "$dir/usage.json" 2>/dev/null || echo null)
+  # the budget decision is factory-budget's (exit 3 means findings, not failure)
+  budget_json=$("$root/bin/factory-budget" --json 2>/dev/null) || [ $? -eq 3 ] || budget_json='null'
+  [ -n "$budget_json" ] || budget_json='null'
   events='[]'
   [ ! -f "$ledger" ] || events=$(jq -R -s -c 'split("\n") | map(fromjson? // empty)' "$ledger")
   jq -n \
     --arg now "$now" --argjson frontier "$frontier" --argjson state "$state" \
-    --argjson usage "$usage_json" --argjson ev "$events" \
+    --argjson bd "$budget_json" --argjson ev "$events" \
     --argjson settings "$(factory_settings "$project")" '
     def ts2s: sub("Z$"; "Z") | fromdateiso8601;
     def clamp($lo; $hi): if . < $lo then $lo elif . > $hi then $hi else . end;
     ($now | ts2s) as $t
     | ($settings.report_interval_min // 60) as $interval
     | ($settings.heartbeat_minutes // [20, 30]) as $hb
-    | ($settings.budget_five_hour_pct // 80) as $b5
-    | ($settings.budget_seven_day_pct // 85) as $b7
     | (($state.running // false) == true) as $running
     | (($state.assignments // {}) | length) as $active
     | (if $frontier == null then null else ($frontier.ready // [] | length) end) as $ready
@@ -165,14 +164,16 @@ next)
           | map(select(.event == "unassign" and (.reason // "") != "stopped")
             | {kind: "stopped", ticket, spec, reason})))
       ,
-      budget: ([
-        ($usage.rate_limits.five_hour // null) as $w | select($w != null)
-          | select(($w.resets_at // 0) > $t and ($w.used_percentage // 0) >= $b5)
-          | {window: "five_hour", used_pct: $w.used_percentage, threshold: $b5, resets_at: $w.resets_at, action: "no-new-builders"},
-        ($usage.rate_limits.seven_day // null) as $w | select($w != null)
-          | select(($w.resets_at // 0) > $t and ($w.used_percentage // 0) >= $b7)
-          | {window: "seven_day", used_pct: $w.used_percentage, threshold: $b7, resets_at: $w.resets_at, action: "ask"}
-      ])
+      budget: (if $bd == null then [] else [
+        (select($bd.five_hour.status == "pause")
+          | {window: "five_hour", used_pct: $bd.five_hour.pct, threshold: $bd.thresholds.five_hour_pct,
+             resets_at: $bd.five_hour.resets_at, action: "no-new-builders"}),
+        (select($bd.seven_day.status == "ask")
+          | {window: "seven_day", used_pct: $bd.seven_day.pct, threshold: $bd.thresholds.seven_day_pct,
+             resets_at: $bd.seven_day.resets_at, action: "ask"}),
+        ($bd.specs[] | select(.status == "ask")
+          | {window: "spec", spec, ratio, threshold: $bd.thresholds.spec_ratio, action: "ask"})
+      ] end)
     }'
   ;;
 *) die "unknown command $cmd (see --help)" ;;

@@ -10,10 +10,10 @@ While `factory-state show` has `running: true`, keep working between the user's 
 
 ## On every wake
 
-1. Handle what woke you (an agent's report, a CI result, a monitor line) as in `start.md` steps 5 to 7.
+1. Handle what woke you (an agent's report, a CI result, a monitor line) as in `start.md` steps 5 to 8.
 2. Run `factory-rhythm next`. It is the only source for what follows; do not estimate.
 3. Say each event in one line with `factory-rhythm note <kind> ... --text "<detail>"` and show its `line`. Kinds: `merged` (ticket merged into its integration branch), `stalled` and `escalated` (an agent stalled or was escalated), `ci-red`, `budget` (a threshold in `budget` was crossed; say it once per window), `question`, `budget-stop`. These are the only notes. No narration between events.
-4. Act on `budget`: `no-new-builders` on the 5-hour window means start no builders until it resets (running ones finish; `factory-rhythm note budget`); `ask` on the 7-day window means ask the user, in one question, before continuing, and `factory-rhythm note question`.
+4. Act on `budget`, which `factory-rhythm next` takes from `factory-budget` (the thresholds are its settings; `start.md` step 4 says what to do for each finding): `no-new-builders` on the 5-hour window means start no builders until it resets (running ones finish; `factory-rhythm note budget`); `ask` (the 7-day window, or a spec past its estimate ratio) means ask the user, in one question, before continuing, and `factory-rhythm note question`.
 5. If `digest_due`: call the Skill tool with `factory:factory-report`, then `factory-rhythm digested --path <the path it printed>`. Show the path in one line. The digest is a file in `.factory/digests/`; it is not pasted into the session.
 6. Schedule the next wake-up (below), unless `heartbeat_seconds` is null.
 

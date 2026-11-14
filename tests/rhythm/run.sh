@@ -157,6 +157,12 @@ check "a window that has reset is stale" '.budget == []'
 rm "$fdir/usage.json"
 next
 check "no usage recorded: no budget flags" '.budget == []'
+state '{"running": true, "assignments": {}, "estimates": {"1": {"first": 10, "current": 16}, "2": {"first": 10, "current": 12}}}'
+next
+check "a spec past its estimate ratio: ask (from factory-budget)" '.budget == [{window: "spec", spec: 1, ratio: 1.6, threshold: 1.5, action: "ask"}]'
+want=$({ "$root/plugins/factory/bin/factory-budget" --json || [ $? -eq 3 ]; } | jq -c '[.specs[] | select(.status == "ask") | .spec]')
+[ "$want" = "[1]" ] || fail "factory-budget and factory-rhythm disagree: $want"
+pass=$((pass + 1))
 
 # --- the manager's skill uses it ---
 wake="$root/plugins/factory/skills/factory/wake.md"
