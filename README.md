@@ -9,6 +9,16 @@ A Claude Code plugin that turns your session into the manager of an agent-driven
 /plugin install factory@claude-factory
 ```
 
+It installs at user level and does nothing in a project until you run `/factory start` there. The plugin works with only bash, git, `gh` and `jq` (a Raspberry Pi is enough).
+
+## Prerequisites
+
+- Claude Code, `git`, `jq`, and `gh` (2.94 or newer for sub-issues and blocked-by), authenticated (`gh auth login`).
+- A project that follows the mattpocock-skills conventions: specs and tickets as GitHub issues (a ticket is a sub-issue of its spec, blockers are native dependencies), the `ready-for-agent` label, `docs/agents/issue-tracker.md` and `docs/agents/triage-labels.md`, and a check command named in `CLAUDE.md` (for example "Run `scripts/check.sh` before every commit") or `check_command` in `.factory/settings.json`.
+- An `origin` remote on GitHub. The skills `tdd`, `code-review` and `pr` from mattpocock-skills are used by the agents.
+
+`/factory start` runs `factory-prereqs` and lists anything missing instead of running half-configured. You keep writing specs and tickets yourself with `/to-spec` and `/to-tickets`.
+
 ## Use
 
 In a project that follows the mattpocock-skills issue conventions (specs and tickets as issues, the triage labels, a check command named in `CLAUDE.md`):
@@ -52,6 +62,25 @@ Budgets: install the status line command beside your own so the factory can read
 
 Restarts and CI: the factory's state lives in the project's `.factory/`, so `/factory start` in a new session resumes it. `factory-resume` plans each saved assignment (its agent is gone): record a merge that was pushed but not recorded, or start a builder again on the existing branch, salvaging uncommitted work first, keeping any escalation. A ticket that already has an assignment is never assigned a second time, so agents are not duplicated. Worktrees nothing owns are listed, never removed without asking. `factory-ci check` looks at the latest CI run of each workflow on a branch: a failure that is an infrastructure error (runner lost, a network or service error in the log, cancelled, did not start) is re-run once with `gh run rerun --failed`; a real failure, a timeout, or an infrastructure error again after the re-run is reported with its failing log lines.
 
-Status: being built. See the open spec issue, [`GLOSSARY.md`](GLOSSARY.md) and [`docs/adr/`](docs/adr/).
+## Limits
+
+- GitHub only, and only projects that use the mattpocock-skills issue conventions. No headless or scheduled runs: the factory works while a session is open.
+- It never merges to the default branch, tags, releases or publishes on its own: those are outward steps it asks about. `guard-bash` cannot catch everything (see above); the `ask` rules are a second line, not a sandbox.
+- Cost is a low-to-high estimate at list prices; plan usage is known only if the status line command is installed. A spec estimate is a guess until a ticket has a cost.
+- One escalation per ticket; a ticket that fails after it is handed back to you. Builders run at most `builder_cap` (3) at a time, and none while disk or temporary space is low.
+- Merge conflicts are never resolved by the merger: the ticket's implementer resolves them, or you are asked.
+
+## Release dry run
+
+Before each release, the maintainer proves the whole loop on a throwaway repository. `scripts/sandbox.sh` makes it repeatable:
+
+```
+scripts/sandbox.sh create                      # private repo factory-sandbox-<date>: one spec, three tickets with blocking edges
+cd <the clone it names>; claude                # plugin installed; run /factory start, answer its questions, do not approve the merge
+scripts/sandbox.sh verify --dir <the clone>    # checks what the run left behind
+scripts/sandbox.sh destroy --repo <owner>/<name> --yes
+```
+
+`create --dry-run` prints the plan and calls nothing. `verify` checks that tickets were taken in frontier order, worktrees were used and removed, every ticket was merged into the integration branch, the ledger and the spec report were written, one draft pull request closes the spec and its tickets, and nothing reached the default branch; that the manager asked before merging, you confirm in the session. `tests/sandbox/run.sh` tests the script against a fake `gh` and local remotes only (it runs in `scripts/check.sh`); the live run is not part of CI.
 
 Licensed under Apache 2.0.
