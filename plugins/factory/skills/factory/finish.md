@@ -18,9 +18,9 @@ When both report, record each: `factory-state review --spec <spec> --role <role>
 
 ## 2. Fix
 
-No findings: go to step 3. Otherwise start **one** builder (`subagent_type` `factory:implementer`; `factory:implementer-deep` when a finding is security) with the "Fixer" brief: the accepted findings, numbered, in its worktree based on `<branch>`. Record it as the brief says (`factory-state assign` under the spec's number), and start it as in start.md step 4 (`isolation` `worktree`, the spawn gate applies). It follows the implementer's rules (test first, check passes, clean build output) and reports like an implementer.
+No findings: go to step 3. Otherwise start **one** builder (`subagent_type` `factory:implementer`; `factory:implementer-deep` when a finding is security) with the "Fixer" brief: the accepted findings, numbered, in its worktree based on `<branch>`. Record it as the brief says (`factory-state assign` under the spec's number), and start it as in start.md step 5 (`isolation` `worktree`, the spawn gate applies). It follows the implementer's rules (test first, check passes, clean build output) and reports like an implementer.
 
-When it reports a passing check, start a merger as for any ticket (brief "Merger", `--ticket` the spec number, `--branch` the fixer's branch) and read its JSON as in start.md step 6. Review once only: do not start a second review round; list findings left unfixed in the lessons.
+When it reports a passing check, start a merger as for any ticket (brief "Merger", `--ticket` the spec number, `--branch` the fixer's branch) and read its JSON as in start.md step 7. Review once only: do not start a second review round; list findings left unfixed in the lessons.
 
 ## 3. Spec report
 
