@@ -254,10 +254,13 @@ cleanup_ticket() {
 
 # leftovers_json [TICKET]: the merged tickets whose worktree or branch is still there.
 leftovers_json() {
-  local only=${1:-} out="[]" row t sp tb twt we bl br
+  local only=${1:-} out="[]" row t sp tb twt we bl br assigned
+  assigned=$("$state_cmd" show | jq -c '.assignments | keys')
   while IFS= read -r row; do
     [ -n "$row" ] || continue
     t=$(jq -r .ticket <<<"$row") sp=$(jq -r .spec <<<"$row")
+    # a ticket sent back for rework is in use again: its branch and worktree are not leftovers
+    jq -e --arg t "$t" 'index($t) | not' <<<"$assigned" >/dev/null || continue
     tb=$(jq -r '.branch // ""' <<<"$row") twt=$(jq -r '.worktree // ""' <<<"$row")
     [ -z "$only" ] || [ "$only" = "$t" ] || continue
     we=false bl=false br=false lock_state=none lock_reason=""

@@ -97,6 +97,25 @@ check "running on" '.running == true'
 "$st" running off
 check "running off" '.running == false'
 
+# --- rework: a merged ticket goes back for a follow-up fix ---
+fails "rework of a ticket that never merged" "$st" rework --ticket 99 --reason "x"
+fails "rework without a reason" "$st" rework --ticket 12
+FACTORY_NOW=2026-01-03T09:00:00Z "$st" rework --ticket 12 --reason "macOS CI failed"
+check "rework assigns again, defaults from the first assignment, and keeps the merge" '
+  .assignments["12"] == {ticket: 12, spec: 3, role: "implementer", model: "sonnet", effort: "high", branch: "t12-parse", worktree: null, agent: null, started: "2026-01-03T09:00:00Z"}
+  and .merged["12"].commit == "abc123"'
+[ "$(tail -n 2 "$ledger" | jq -c '[.event, .ticket, .spec, .result, .reason]')" = '["gate",12,3,"fail","macOS CI failed"]
+["rework",12,3,null,"macOS CI failed"]' ] || fail "rework ledger: gate fail then rework event, with the reason: $(tail -n 2 "$ledger")"
+pass=$((pass + 1))
+lastev "rework event carries the new assignment" '.role == "implementer" and .model == "sonnet" and .effort == "high" and .branch == "t12-parse"'
+fails "rework of a ticket already reassigned" "$st" rework --ticket 12 --reason "again"
+"$st" merge --ticket 12 --commit def456 --worktree /w/agent-12b
+check "second merge keeps the first commit and gains the new one" '(.assignments | has("12") | not) and (.merged["12"] | .commit == "def456" and .commits == ["abc123", "def456"] and .worktree == "/w/agent-12b")'
+"$st" rework --ticket 12 --reason "review send-back" --role implementer-deep --model opus --effort max --branch t12-fix2
+check "rework takes the role, model, effort and branch given" '.assignments["12"] | .role == "implementer-deep" and .model == "opus" and .effort == "max" and .branch == "t12-fix2"'
+"$st" merge --ticket 12 --commit 789abc
+check "a third merge keeps every commit" '.merged["12"].commits == ["abc123", "def456", "789abc"]'
+
 # --- atomic, locked writes: concurrent assigns all land, nothing left behind ---
 for n in $(seq 100 119); do
   "$st" assign --ticket "$n" --spec 7 --role implementer --model sonnet --effort high --branch "t$n-x" &
