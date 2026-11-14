@@ -10,7 +10,9 @@ usage() {
 Usage: factory-state <command> [options]
 
   show                         print the state JSON (an empty state when none is saved)
-  list [--json]                running assignments with their age
+  list [--json]                running assignments with their age; a ticket whose gate passed but
+                               that has not merged for longer than merge_stall_minutes (settings,
+                               default 60) shows as merge-stalled with the time since the pass
   assign --ticket N --spec S --role R --model M --effort E --branch B [--worktree P] [--agent ID]
                                record an assignment; ledger: assign {ticket, spec, role, model, effort, branch}
   update --ticket N [--agent ID] [--worktree P] [--branch B]
@@ -129,18 +131,29 @@ show)
   ;;
 list)
   now=$(factory_now)
-  rows=$(current | jq -c --arg now "$now" '
-    [.assignments[] | . + {age_min: (if .started == null then null
-      else ((($now | fromdateiso8601) - (.started | fromdateiso8601)) / 60 | floor) end)}]
+  events='[]'
+  [ ! -f "$ledger" ] || events=$(jq -R -s -c 'split("\n") | map(fromjson? // empty) | map(select(type == "object"))' "$ledger")
+  rows=$(current | jq -c --arg now "$now" --argjson ev "$events" \
+    --argjson minutes "$(factory_merge_stall_minutes "$project")" -L "$root/lib" '
+    include "stalled";
+    merge_stalled($ev; null; $now; $minutes) as $stalled
+    | [.assignments[] | . as $a
+      | ([$stalled[] | select(.ticket == $a.ticket)] | first) as $m
+      | . + {age_min: (if .started == null then null
+          else ((($now | fromdateiso8601) - (.started | fromdateiso8601)) / 60 | floor) end),
+        status: (if $m == null then "running" else "merge-stalled" end),
+        stalled_min: ($m.age_min // null)}]
     | sort_by(.started)')
   if [ "$json" = 1 ]; then
     jq . <<<"$rows"
   elif [ "$(jq length <<<"$rows")" = 0 ]; then
     echo "No running assignments."
   else
-    jq -r '(["ticket", "spec", "role", "model", "effort", "age", "branch"] | @tsv),
+    jq -r 'def dur: if . < 60 then "\(.)m" else "\(. / 60 | floor)h\(. % 60)m" end;
+      (["ticket", "spec", "role", "model", "effort", "age", "status", "branch"] | @tsv),
       (.[] | ["#\(.ticket)", "#\(.spec)", .role, .model, .effort,
-              (if .age_min == null then "?" elif .age_min < 60 then "\(.age_min)m" else "\(.age_min / 60 | floor)h\(.age_min % 60)m" end),
+              (if .age_min == null then "?" else .age_min | dur end),
+              (if .status == "merge-stalled" then "merge-stalled \(.stalled_min | dur)" else .status end),
               (.branch // "")] | @tsv)' <<<"$rows" | column -t -s "$(printf '\t')"
   fi
   ;;
