@@ -41,6 +41,13 @@ factory_settings() {
   fi
 }
 
+# factory_merge_stall_minutes <project>: minutes a ticket may sit between a passed gate and its
+# merge before it counts as stalled: merge_stall_minutes from the settings, 60 when unset or
+# not a non-negative number.
+factory_merge_stall_minutes() {
+  factory_settings "$1" | jq -r '.merge_stall_minutes | if type == "number" and . >= 0 then . else 60 end'
+}
+
 # factory_now: UTC ISO 8601, overridable with FACTORY_NOW for tests.
 factory_now() { printf '%s\n' "${FACTORY_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"; }
 

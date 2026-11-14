@@ -7,6 +7,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 kpis="$here/../../plugins/factory/bin/factory-kpis"
 fx="$here/fixtures"
 export FACTORY_KPIS_FREE_ROOT_KB=10485760 FACTORY_KPIS_FREE_TMP_KB=2097152
+# The clock is pinned: a ticket that passed its gate and has not merged counts as stalled after an
+# hour, so "now" must not drift away from the fixtures (the last gate pass is 2026-02-01T10:14:00Z).
+export FACTORY_NOW=2026-02-01T10:30:00Z
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/kpis-suite.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 fail=0 count=0

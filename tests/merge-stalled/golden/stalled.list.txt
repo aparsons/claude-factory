@@ -1,0 +1,4 @@
+ticket  spec  role         model   effort  age     status               branch
+#11     #9    implementer  sonnet  high    13h0m   running              t11-running
+#12     #9    implementer  sonnet  high    12h59m  merge-stalled 11h0m  t12-stalled
+#13     #9    implementer  sonnet  high    12h58m  running              t13-fresh

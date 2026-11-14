@@ -1,0 +1,44 @@
+[
+  {
+    "ticket": 11,
+    "spec": 9,
+    "role": "implementer",
+    "model": "sonnet",
+    "effort": "high",
+    "branch": "t11-running",
+    "worktree": null,
+    "agent": null,
+    "started": "2026-11-12T22:00:00Z",
+    "age_min": 780,
+    "status": "running",
+    "stalled_min": null
+  },
+  {
+    "ticket": 12,
+    "spec": 9,
+    "role": "implementer",
+    "model": "sonnet",
+    "effort": "high",
+    "branch": "t12-stalled",
+    "worktree": null,
+    "agent": null,
+    "started": "2026-11-12T22:01:00Z",
+    "age_min": 779,
+    "status": "merge-stalled",
+    "stalled_min": 660
+  },
+  {
+    "ticket": 13,
+    "spec": 9,
+    "role": "implementer",
+    "model": "sonnet",
+    "effort": "high",
+    "branch": "t13-fresh",
+    "worktree": null,
+    "agent": null,
+    "started": "2026-11-12T22:02:00Z",
+    "age_min": 778,
+    "status": "running",
+    "stalled_min": null
+  }
+]

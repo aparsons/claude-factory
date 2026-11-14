@@ -1,14 +1,12 @@
 # Computes the KPI object from the ledger (stdin, raw text, JSON lines).
 # Arguments: $prices, $runs (gh run list JSON or null), $usage (usage.json or null),
-#            $merges (array of {ts, subject} from a git log, or null), $health ({root_kb, tmp_kb}).
+#            $merges (array of {ts, subject} from a git log, or null), $health ({root_kb, tmp_kb}),
+#            $now (ISO 8601) and $stall_minutes (a passed ticket unmerged for longer is stalled).
 # A KPI that cannot be computed from what is recorded is null (printed as n/a), never 0.
 
-def ts2s:
-  capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:[0-9]{2})$") as $c
-  | ($c.d + "Z" | fromdateiso8601) as $base
-  | if $c.z == "Z" then $base
-    else (($c.z[1:3] | tonumber) * 3600 + ($c.z[4:6] | tonumber) * 60) as $o
-      | if $c.z[0:1] == "+" then $base - $o else $base + $o end end;
+include "ts";
+include "stalled";
+
 def median: if length == 0 then null else sort | (.[((length - 1) / 2 | floor)] + .[(length / 2 | floor)]) / 2 end;
 def sumnn: [.[] | select(type == "number")] | if length == 0 then null else add end;
 def round1: if . == null then null else (. * 10 | round) / 10 end;
@@ -66,7 +64,7 @@ def types: ["input", "output", "cache_read", "cache_creation"];
     lead_time_median_s: ($leads | median),
     frontier_size: null,
     active_agents: (if $recorded then [$started[] | select(. as $a | $stopped | index($a) | not)] | length else null end),
-    stalls: (if $recorded then [$ev[] | select(.event == "stall")] | length else null end)},
+    stalls: (if $recorded then ([$ev[] | select(.event == "stall")] | length) + (merge_stalled($ev; $merged; $now; $stall_minutes) | length) else null end)},
   quality: {
     first_try_gate_pass_rate: (rate([$gates[] | select(.[0].result == "pass")] | length; $gates | length) | round2),
     rework_runs: (if ($builds | length) == 0 then null else [$builds[] | length - 1] | add end),
