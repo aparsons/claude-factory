@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016 # jq programs are single-quoted on purpose
+# factory-spec-report: the spec report committed in a spec's pull request, and the issues that
+# pull request must close.
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  factory-spec-report write --spec S --branch B [--issue FILE] [--worktree DIR] [--lessons FILE]
+                            [--git-log FILE] [--runs FILE] [--commit]
+      Write DIR/docs/factory/reports/<B without its spec/ or ticket/ prefix>.md and print its path.
+      Sections: progress (tickets and their merges), escalations, review findings, cost (spec
+      estimate, spec and per-ticket cost range), lessons, and the full project KPI table as
+      factory-kpis prints it. Everything comes from .factory/state.json, .factory/ledger.jsonl and
+      factory-kpis; a number not recorded prints as n/a or "none", never as a guess.
+      --issue FILE   `gh issue view S --json number,title,state,subIssues` (default: ask gh)
+      --worktree DIR the spec's integration worktree (default: the current directory)
+      --lessons FILE Markdown the manager wrote about what went well and badly (default: none)
+      --git-log, --runs  passed to factory-kpis
+      --commit       commit the report alone ("Spec report: #S"); nothing when unchanged
+  factory-spec-report closes --spec S [--issue FILE] [--body FILE]
+      Print "Closes #N" for the spec and each of its tickets (a standalone ticket: itself).
+      With --body FILE (the pull request body): exit 1 and name each issue the body does not
+      close on a line starting with Closes, Fixes or Resolves.
+USAGE
+}
+
+root=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+# shellcheck disable=SC1091 # lib/common.sh, checked on its own
+. "$root/lib/common.sh"
+
+die() { echo "factory-spec-report: $*" >&2; exit 2; }
+cmd=${1:-}
+case "$cmd" in -h | --help) usage; exit 0 ;; write | closes) shift ;; *) usage >&2; exit 2 ;; esac
+spec="" branch="" issue="" worktree="" lessons="" gitlog="" runs="" body="" commit=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --spec) spec=${2:?}; shift ;;
+    --branch) branch=${2:?}; shift ;;
+    --issue) issue=${2:?}; shift ;;
+    --worktree) worktree=${2:?}; shift ;;
+    --lessons) lessons=${2:?}; shift ;;
+    --git-log) gitlog=${2:?}; shift ;;
+    --runs) runs=${2:?}; shift ;;
+    --body) body=${2:?}; shift ;;
+    --commit) commit=1 ;;
+    -h | --help) usage; exit 0 ;;
+    *) die "unknown argument $1" ;;
+  esac
+  shift
+done
+[[ "$spec" =~ ^[0-9]+$ ]] || die "--spec needs a number, got '$spec'"
+
+project=$(factory_project)
+fdir="$project/.factory"
+
+# issue JSON: the file, else the tracker
+if [ -n "$issue" ]; then
+  issue_json=$(jq -c . "$issue") || die "$issue is not valid JSON"
+else
+  issue_json=$(cd "$project" && gh issue view "$spec" --json number,title,state,subIssues 2>/dev/null) ||
+    die "could not read issue #$spec with gh; pass --issue FILE"
+fi
+# tickets: [{number, title}] from the sub-issues
+tickets=$(jq -c '[(.subIssues.nodes // .subIssues // [])[] | {number, title}]' <<<"$issue_json")
+
+if [ "$cmd" = closes ]; then
+  want=$(jq -r --argjson s "$spec" '[$s] + [.[].number] | unique | .[]' <<<"$tickets" |
+    sort -n | sed 's/^/#/')
+  # the spec first, then its tickets in order
+  lines=$(printf '%s\n' "$want" | sed 's/^/Closes /')
+  if [ -z "$body" ]; then printf '%s\n' "$lines"; exit 0; fi
+  [ -f "$body" ] || die "no such file: $body"
+  # Issues closed by lines that start with a closing keyword (a bullet or indentation allowed).
+  closed=$(grep -iE '^[[:space:]]*([-*][[:space:]]+)?(close[sd]?|fix(e[sd])?|resolve[sd]?)[[:space:]:]+#[0-9]+' "$body" |
+    grep -oE '#[0-9]+' | sort -u || true)
+  missing=$(comm -23 <(printf '%s\n' "$want" | sort -u) <(printf '%s\n' "$closed") || true)
+  if [ -n "$missing" ]; then
+    echo "pull request body does not close: $(printf '%s\n' "$missing" | sort -t'#' -k2 -n | paste -sd' ' -)" >&2
+    exit 1
+  fi
+  exit 0
+fi
+
+# --- write ---
+[ -n "$branch" ] || die "write needs --branch"
+[ -n "$worktree" ] || worktree=$(pwd)
+slug=${branch#*/}
+out="$worktree/docs/factory/reports/$slug.md"
+title=$(jq -r '.title // empty' <<<"$issue_json")
+
+state='{"assignments": {}, "merged": {}, "estimates": {}}'
+[ ! -f "$fdir/state.json" ] || state=$(jq -c . "$fdir/state.json") || die "$fdir/state.json is not valid JSON"
+ledger='[]'
+if [ -f "$fdir/ledger.jsonl" ]; then
+  ledger=$(jq -R -s -c 'split("\n") | map(fromjson? // empty) | map(select(type == "object"))' "$fdir/ledger.jsonl")
+fi
+
+kargs=(--json)
+[ -z "$gitlog" ] || kargs+=(--git-log "$gitlog")
+[ -z "$runs" ] || kargs+=(--runs "$runs")
+kpis_json=$("$root/bin/factory-kpis" "${kargs[@]}")
+kpis_md=$("$root/bin/factory-kpis" "${kargs[@]:1}")
+
+# Ticket numbers of this spec: its sub-issues, plus any ticket the state or ledger ties to it.
+spec_tickets=$(jq -nc --argjson s "$spec" --argjson t "$tickets" --argjson st "$state" --argjson l "$ledger" '
+  ([$t[].number]
+   + [$st.merged[] | select(.spec == $s) | .ticket]
+   + [$st.assignments[] | select(.spec == $s) | .ticket]
+   + [$l[] | select(.spec == $s and .ticket != null) | .ticket]) | unique
+  # the review fixer is assigned under the spec'"'"'s own number: it is not one of the spec'"'"'s tickets
+  | if ($t | length) > 0 then map(select(. != $s)) else . end')
+
+mkdir -p "$(dirname "$out")"
+{
+  jq -nr --argjson s "$spec" --arg title "$title" --arg branch "$branch" --arg now "$(factory_now)" \
+    --argjson t "$tickets" --argjson ts "$spec_tickets" --argjson st "$state" --argjson l "$ledger" \
+    --argjson k "$kpis_json" '
+    def usd: (. * 100 | round) as $c | "$\($c / 100 | floor).\(($c % 100) | tostring | if length < 2 then "0" + . else . end)";
+    def range: if .usd_low == null then "n/a" else "\(.usd_low | usd) to \(.usd_high | usd)" end;
+    ($t | map({key: (.number | tostring), value: .title}) | from_entries) as $titles
+    | ([$ts[] | tostring | select($st.merged[.] != null)] | length) as $merged
+    | "# Spec report: #\($s)" + (if $title == "" then "" else " \($title)" end),
+    "",
+    "Integration branch `\($branch)`. Written \($now) by the factory manager.",
+    "",
+    "## Progress",
+    "",
+    "Tickets merged: \($merged) of \($ts | length)",
+    "",
+    "| Ticket | Title | State | Commit |",
+    "| --- | --- | --- | --- |",
+    ($ts[] | . as $n | ($n | tostring) as $key
+      | ($st.merged[$key] // null) as $m | ($st.assignments[$key] // null) as $a
+      | "| #\($n) | \($titles[$key] // "") | \(if $m != null then "merged" elif $a != null then "running" else "not merged" end) | \(if $m != null then $m.commit else "" end) |"),
+    "",
+    "## Escalations",
+    "",
+    ([$l[] | select(.event == "escalation" and (.ticket as $x | $ts | index($x)))] as $e
+      | if ($e | length) == 0 then "Escalations: none"
+        else "| Ticket | Escalation | Reason |", "| --- | --- | --- |",
+          ($e[] | "| #\(.ticket) | \(.from) to \(.to) | \(.reason // "not recorded") |") end),
+    "",
+    "## Review",
+    "",
+    ([$l[] | select(.event == "review" and .spec == $s)] as $r
+      | if ($r | length) == 0 then "Review findings: none recorded"
+        else "| Reviewer | Findings |", "| --- | --- |",
+          ($r[] | "| \(.role // "reviewer") | \(.findings // "n/a") |") end),
+    "",
+    "## Cost",
+    "",
+    "First estimate: \(($st.estimates[$s | tostring].first // null) | if . == null then "not recorded" else usd end)",
+    "Current estimate: \(($st.estimates[$s | tostring].current // null) | if . == null then "not recorded" else usd end)",
+    "",
+    "Estimated cost (low to high): \(([($k.cost.by_spec // [])[] | select(.spec == $s)] | first // {usd_low: null}) | range)",
+    "",
+    (([($k.cost.by_ticket // [])[] | select(.ticket as $x | $x != null and ($ts | index($x)))]) as $bt
+      | if ($bt | length) == 0 then "Cost per ticket: n/a"
+        else "| Ticket | Runs | Cost (low to high) |", "| --- | --- | --- |",
+          ($bt[] | "| #\(.ticket) | \(.runs) | \(range) |") end),
+    "",
+    "Plan usage at writing: 5 hours \($k.cost.plan_usage.five_hour_pct | if . == null then "n/a" else "\(.)%" end), 7 days \($k.cost.plan_usage.seven_day_pct | if . == null then "n/a" else "\(.)%" end).",
+    ""'
+  echo "## Lessons"
+  echo
+  if [ -n "$lessons" ] && [ -s "$lessons" ]; then cat "$lessons"; else echo "Lessons: none recorded"; fi
+  echo
+  echo "## KPIs"
+  echo
+  echo "The project's KPIs when this report was written (not only this spec's)."
+  echo
+  # one level down, so the table's headings nest under "KPIs"
+  sed 's/^\(#\{1,\}\) /\1# /' <<<"$kpis_md"
+} >"$out"
+
+if [ "$commit" = 1 ]; then
+  rel="docs/factory/reports/$slug.md"
+  git -C "$worktree" add -- "$rel"
+  if ! git -C "$worktree" diff --cached --quiet -- "$rel"; then
+    git -C "$worktree" commit -q -m "Spec report: #$spec" -- "$rel"
+  fi
+fi
+printf '%s\n' "$out"

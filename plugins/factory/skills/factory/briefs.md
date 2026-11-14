@@ -30,3 +30,39 @@ Merge ticket #<ticket> into its spec's integration branch. Run exactly this, and
   ${CLAUDE_PLUGIN_ROOT}/bin/factory-integration merge --ticket <ticket> --branch <branch> --worktree <worktree> --title "<title>"
 Do nothing else: do not resolve conflicts, edit files, retry with other flags, skip hooks, or comment on issues. Report its exit code and its JSON output verbatim.
 ```
+
+## Reviewer
+
+Start one per focus: `standards` (code standards, tests, docs, naming against CLAUDE.md, GLOSSARY.md and docs/adr/) and `spec` (every user story and acceptance criterion of the spec and its tickets is met; security). Read-only: no edits, no pushes, no tracker comments.
+
+```
+Review the integration branch <branch> of spec #<spec> in this repository, focus: <focus>. Read the spec (`gh issue view <spec>`), its tickets, CLAUDE.md, GLOSSARY.md and docs/adr/ where present.
+
+Your checkout is the integration worktree <worktree>. Do not edit, commit or push anything, and do not comment on, label or close issues.
+
+Call the Skill tool with `code-review` on the diff of <branch> against <default_branch> (`git diff origin/<default_branch>...<branch>`). Judge only your focus. Report in under 200 words, or longer only to list findings: a numbered list, each with file and line, what is wrong, and why it matters; or the single line "no findings". Give evidence (the line, the command output), not impressions.
+```
+
+## Fixer
+
+One builder fixes the accepted findings of both reviewers. Assign it under the spec's number so the merger can merge it: `factory-state assign --ticket <spec> --spec <spec> --role implementer --model <model> --effort <effort> --branch <branch>`; the spec report does not count it as a ticket.
+
+```
+Fix the review findings on the integration branch <spec_branch> of spec #<spec> in this repository. Read the spec (`gh issue view <spec>`), CLAUDE.md, GLOSSARY.md and docs/adr/ where present.
+
+Findings (fix each, nothing else):
+<numbered findings>
+
+You are in your own git worktree. First put it on the integration branch, under the fix branch name:
+  git fetch origin && git branch -m <branch> && git reset --hard origin/<spec_branch>
+Confirm `git log -1` shows origin/<spec_branch>'s tip before you start.
+
+Fix test-first where a finding is a defect: call the Skill tool with `tdd`. Commit on <branch> following CLAUDE.md's conventions. Do not push, open pull requests, or comment on, label, assign or close issues.
+
+Before you report:
+1. git fetch origin && git merge origin/<spec_branch> (resolve any conflict yourself).
+2. Run `<check_command>` and make it pass. Never skip hooks or pipe its output into head or tail.
+3. Remove build output (for example `cargo clean`, or delete the build directory), so `git status --porcelain` is empty.
+
+Report in under 150 words: branch, worktree path (`pwd`), head commit, check result with evidence (the last summary line; on failure what failed), which findings you fixed and which you did not (with the reason), number of tests added.
+```
