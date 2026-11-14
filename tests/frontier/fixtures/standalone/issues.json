@@ -1,0 +1,353 @@
+[
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [
+        {
+          "id": "I_61",
+          "number": 61,
+          "state": "OPEN",
+          "title": "issue 61",
+          "url": "https://github.com/o/r/issues/61"
+        }
+      ],
+      "totalCount": 1
+    },
+    "body": "Running with an empty file panics.\n\n## Steps\n\n1. `tool < /dev/null`",
+    "createdAt": "2026-01-05T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      },
+      {
+        "id": "LA_bug",
+        "name": "bug",
+        "description": "",
+        "color": "ededed"
+      },
+      {
+        "id": "LA_priority:high",
+        "name": "priority:high",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 60,
+    "parent": null,
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 0
+    },
+    "title": "Crash on empty input"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [
+        {
+          "id": "I_60",
+          "number": 60,
+          "state": "OPEN",
+          "title": "issue 60",
+          "url": "https://github.com/o/r/issues/60"
+        }
+      ],
+      "totalCount": 1
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "body": "Retry once on a reset connection.",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 61,
+    "parent": null,
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 0
+    },
+    "title": "Retry the flaky download"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "body": "",
+    "createdAt": "2025-12-15T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 62,
+    "parent": null,
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 0
+    },
+    "title": "Typo in the help text"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "body": "## Problem Statement\n\nNo widgets.\n\n## User Stories\n\n1. As a user...",
+    "createdAt": "2025-12-01T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 70,
+    "parent": null,
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [
+        {
+          "id": "I_71",
+          "number": 71,
+          "state": "OPEN",
+          "title": "issue 71",
+          "url": "https://github.com/o/r/issues/71"
+        },
+        {
+          "id": "I_72",
+          "number": 72,
+          "state": "OPEN",
+          "title": "issue 72",
+          "url": "https://github.com/o/r/issues/72"
+        }
+      ],
+      "totalCount": 2
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 2
+    },
+    "title": "Spec: Widgets"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [
+        {
+          "id": "I_72",
+          "number": 72,
+          "state": "OPEN",
+          "title": "issue 72",
+          "url": "https://github.com/o/r/issues/72"
+        }
+      ],
+      "totalCount": 1
+    },
+    "body": "## Parent\n\n#70",
+    "createdAt": "2026-01-02T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 71,
+    "parent": {
+      "id": "I_70",
+      "number": 70,
+      "state": "OPEN",
+      "title": "issue 70",
+      "url": "https://github.com/o/r/issues/70"
+    },
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 0
+    },
+    "title": "Add the widget"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [
+        {
+          "id": "I_71",
+          "number": 71,
+          "state": "OPEN",
+          "title": "issue 71",
+          "url": "https://github.com/o/r/issues/71"
+        }
+      ],
+      "totalCount": 1
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "body": "## Parent\n\n#70",
+    "createdAt": "2026-01-03T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 72,
+    "parent": {
+      "id": "I_70",
+      "number": 70,
+      "state": "OPEN",
+      "title": "issue 70",
+      "url": "https://github.com/o/r/issues/70"
+    },
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 0
+    },
+    "title": "Style the widget"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "body": "To be split.",
+    "createdAt": "2026-01-04T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 80,
+    "parent": null,
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 0
+    },
+    "title": "Spec: Later work"
+  },
+  {
+    "assignees": [],
+    "blockedBy": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "blocking": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "body": "## Problem Statement\n\nNo settings.\n\n## Solution\n\nA file.\n\n## User Stories\n\n1. As a user...",
+    "createdAt": "2026-01-06T00:00:00Z",
+    "labels": [
+      {
+        "id": "LA_ready-for-agent",
+        "name": "ready-for-agent",
+        "description": "",
+        "color": "ededed"
+      }
+    ],
+    "milestone": null,
+    "number": 81,
+    "parent": null,
+    "state": "OPEN",
+    "subIssues": {
+      "nodes": [],
+      "totalCount": 0
+    },
+    "subIssuesSummary": {
+      "completed": 0,
+      "percentCompleted": 0,
+      "total": 0
+    },
+    "title": "Plugin settings"
+  }
+]

@@ -95,6 +95,40 @@ check "recorded: it unblocks the other twelve" '.ready[0].unblocks == 12 and .re
 check "recorded: the spec is listed once, not as a ticket" '[.specs[].number] == [1] and (.specs[0].tickets == 13)'
 check "recorded: blocked tickets name their blockers" '.blocked[] | select(.number == 5) | (.blocked_by | sort) == [3, 4]'
 
+# --- standalone tickets: a parent-less issue without sub-issues that is not marked as a spec ---
+run "$fx/standalone"
+check "standalone: ranked with spec tickets by the same rules" '[.ready[].number] == [60, 71, 62]'
+check "standalone bug is a ticket on its own integration branch" \
+  '.ready[0] | .number == 60 and .standalone and .spec == 60 and .branch == "t60-crash-on-empty-input"
+     and .spec_branch == "ticket/60-crash-on-empty-input" and .role == "implementer" and .priority_label == "priority:high"'
+check "spec ticket is not standalone" '.ready[] | select(.number == 71) | (.standalone | not) and .spec == 70 and .spec_branch == "spec/70-widgets"'
+check "standalone blocked by another issue" '.blocked[] | select(.number == 61) | .status == "blocked" and .blocked_by == [60] and .standalone'
+check "standalone blocker counts as unblocking" '.ready[0].unblocks == 1'
+check "spec with tickets stays a spec" '.specs[] | select(.number == 70) | .status == "ready" and .tickets == 2 and (.standalone | not)'
+check "spec marked by title or body without sub-issues needs /to-tickets" \
+  '.needs_tickets == [80, 81] and ([.specs[] | select(.status == "needs-tickets") | .number] == [80, 81])'
+check "specs are not tickets, standalone or not" '[.ready[].number, .blocked[].number] | (index(70), index(80), index(81)) == null'
+check "a standalone ticket is its own one-ticket entry in specs" \
+  '[.specs[] | select(.standalone) | {number, tickets, status, branch}] == [
+     {number: 60, tickets: 1, status: "ready", branch: "ticket/60-crash-on-empty-input"},
+     {number: 61, tickets: 1, status: "blocked", branch: "ticket/61-retry-the-flaky-download"},
+     {number: 62, tickets: 1, status: "ready", branch: "ticket/62-typo-in-the-help-text"}]'
+cat >"$tmp/state-standalone.json" <<'JSON'
+{"assignments": {"62": {"ticket": 62, "spec": 62, "role": "implementer", "model": "sonnet", "effort": "high", "branch": "t62-typo", "started": "2026-01-01T00:00:00Z"}},
+ "merged": {"60": {"ticket": 60, "spec": 60, "branch": "t60-crash-on-empty-input", "commit": "abc"}},
+ "integration": {"61": {"spec": 61, "branch": "ticket/61-custom", "status": "active"}}}
+JSON
+run "$fx/standalone" "$tmp/state-standalone.json"
+check "merged standalone ticket unblocks and is complete" \
+  '([.ready[].number] == [71, 61]) and (.specs[] | select(.number == 60) | .status == "complete" and .merged == 1)'
+check "running standalone ticket" '[.running[].number] == [62] and (.specs[] | select(.number == 62) | .status == "running")'
+check "recorded standalone integration branch wins" '.ready[] | select(.number == 61) | .spec_branch == "ticket/61-custom"'
+txt=$("$tool" --from "$fx/standalone" --state "$tmp/none.json")
+for s in "1. #60 (standalone) implementer" "#61 (standalone) blocked by #60" "#81 needs-tickets (needs /to-tickets)" "#60 ready (standalone)"; do
+  [[ "$txt" == *"$s"* ]] || fail "standalone text output lacks '$s': $txt"
+  pass=$((pass + 1))
+done
+
 # --- text output ---
 txt=$("$tool" --from "$fx/graph" --state "$tmp/none.json")
 for s in "Frontier: 7 ready" "1. #15 (spec #10) implementer-deep opus/high" "[security]" "[priority priority:high]" "#30 needs-tickets (needs /to-tickets)" "#12 (spec #10) blocked by #11"; do
