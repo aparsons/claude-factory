@@ -17,9 +17,10 @@ Usage: factory-state <command> [options]
                                fill in what is known after the agent starts
   unassign --ticket N [--reason TEXT]
                                drop an assignment without merging; ledger: unassign {ticket, spec, reason}
-  merge --ticket N --commit SHA
+  merge --ticket N --commit SHA [--worktree P]
                                the ticket is merged into its integration branch: moves the assignment
-                               to merged; ledger: merge {ticket, spec, branch, commit}
+                               to merged, keeping its worktree path (P, else the assignment's) so a
+                               clean-up left undone can be retried; ledger: merge {ticket, spec, branch, commit}
   gate --ticket N --result pass|fail [--tests-added K]
                                ledger only: gate {ticket, spec, result, tests_added}
   integration --spec S --branch B [--worktree P] [--status active|complete]
@@ -174,8 +175,10 @@ merge)
   [ -n "$commit" ] || die "merge needs --commit"
   a=$(current | jq -c --arg t "$ticket" '.assignments[$t] // empty')
   [ -n "$a" ] || die "ticket #$ticket has no assignment"
-  mutate '.merged[$t] = {ticket: $a.ticket, spec: $a.spec, branch: $a.branch, commit: $c, merged_at: $now}
-      | del(.assignments[$t])' --arg t "$ticket" --argjson a "$a" --arg c "$commit"
+  mutate '.merged[$t] = {ticket: $a.ticket, spec: $a.spec, branch: $a.branch}
+        + (if ($wt != "" or $a.worktree != null) then {worktree: (if $wt != "" then $wt else $a.worktree end)} else {} end)
+        + {commit: $c, merged_at: $now}
+      | del(.assignments[$t])' --arg t "$ticket" --argjson a "$a" --arg c "$commit" --arg wt "$worktree"
   event '{event: "merge", ticket: $a.ticket, spec: $a.spec, branch: $a.branch, commit: $c}' --argjson a "$a" --arg c "$commit"
   ;;
 gate)

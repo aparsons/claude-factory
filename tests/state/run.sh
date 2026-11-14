@@ -63,7 +63,7 @@ fails "unassign of an unknown ticket" "$st" unassign --ticket 13
 lastev "gate event" '.event == "gate" and .ticket == 12 and .spec == 3 and .result == "fail" and .tests_added == 2'
 fails "gate needs pass or fail" "$st" gate --ticket 12 --result maybe
 "$st" merge --ticket 12 --commit abc123
-check "merge moves the assignment" '(.assignments == {}) and .merged["12"] == {ticket: 12, spec: 3, branch: "t12-parse", commit: "abc123", merged_at: "2026-01-01T10:00:00Z"}'
+check "merge moves the assignment" '(.assignments == {}) and .merged["12"] == {ticket: 12, spec: 3, branch: "t12-parse", worktree: "/w/agent-1", commit: "abc123", merged_at: "2026-01-01T10:00:00Z"}'
 lastev "merge event" '. == {ts: "2026-01-01T10:00:00Z", event: "merge", ticket: 12, spec: 3, branch: "t12-parse", commit: "abc123", session_id: null}'
 fails "merge of an unassigned ticket" "$st" merge --ticket 12 --commit abc
 fails "merge without a commit" "$st" merge --ticket 12
