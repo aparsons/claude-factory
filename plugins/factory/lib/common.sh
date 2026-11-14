@@ -41,6 +41,33 @@ factory_settings() {
   fi
 }
 
+# factory_claude_md <project>: the path of the project's CLAUDE.md, or nothing.
+factory_claude_md() {
+  local f
+  for f in "$1/CLAUDE.md" "$1/.claude/CLAUDE.md"; do
+    [ -f "$f" ] && { printf '%s\n' "$f"; return; }
+  done
+  return 0
+}
+
+# factory_check_command <project>: the project's check command: check_command in
+# .factory/settings.json, else the first code span on a line of CLAUDE.md about checks or
+# tests that looks like a command. Nothing when none is named.
+factory_check_command() {
+  local cmd md
+  cmd=$(factory_settings "$1" | jq -r '.check_command // empty')
+  if [ -z "$cmd" ]; then
+    md=$(factory_claude_md "$1")
+    if [ -n "$md" ]; then
+      # shellcheck disable=SC2016 # backticks in the pattern are literal Markdown code-span marks
+      cmd=$(grep -iE 'check|test|\bCI\b' "$md" | grep -oE '`[^`]+`' | tr -d '`' |
+        grep -E '^(\./|scripts/|bin/|tools/)|\.sh( |$)|^(make|just|npm|pnpm|yarn|bun|deno|cargo|go|pytest|tox|nox|uv|poetry|mvn|gradle|\./gradlew|dotnet|bazel|mix|bundle|rake)( |$)' |
+        head -n 1 || true)
+    fi
+  fi
+  printf '%s\n' "$cmd"
+}
+
 # factory_now: UTC ISO 8601, overridable with FACTORY_NOW for tests.
 factory_now() { printf '%s\n' "${FACTORY_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"; }
 
