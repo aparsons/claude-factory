@@ -1,0 +1,4 @@
+{"version":1,"running":true,"assignments":{},"merged":{},"integration":{},"escalations":{},
+ "estimates":{"1":{"first":10,"current":15,"updated":"2026-01-01T09:00:00Z"},
+              "2":{"first":10,"current":15.01,"updated":"2026-01-01T09:00:00Z"},
+              "3":{"first":0,"current":4,"updated":"2026-01-01T09:00:00Z"}}}

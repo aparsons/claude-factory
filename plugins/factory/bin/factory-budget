@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# factory-budget: whether the factory is within the user's plan. Reads <project>/.factory/usage.json
+# (written by factory-statusline), settings.json and the spec estimates in state.json.
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: factory-budget [check] [--json]
+
+Decides from the recorded plan usage and the specs' cost estimates:
+  - 5-hour window above its limit: start no new builders until it resets (builders: paused)
+  - 7-day window above its limit: ask the user before continuing (continue: ask)
+  - a spec's estimated cost above its ratio times its first estimate: report and ask (continue: ask)
+A window that has already reset, or never been recorded, does not count.
+
+Prints one line per finding (or "budget: ok") and exits 0 when all is well, 3 when builders are
+paused or the user must be asked. --json prints the full decision: thresholds, both windows,
+the specs' ratios, builders (ok|paused), resume_at, continue (ok|ask) and messages.
+
+Limits, in <project>/.factory/settings.json (defaults in brackets):
+  budget_five_hour_pct [80]   budget_seven_day_pct [85]   budget_spec_ratio [1.5]
+FACTORY_NOW overrides the time (tests).
+USAGE
+}
+
+root=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+# shellcheck disable=SC1091 # lib/common.sh, checked on its own
+. "$root/lib/common.sh"
+
+json=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    check) ;;
+    --json) json=1 ;;
+    -h | --help) usage; exit 0 ;;
+    *) echo "factory-budget: unknown argument $1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+project=$(factory_project)
+dir="$project/.factory"
+
+# a file that is absent or unreadable is null: no decision comes from it
+read_json() { # read_json <file> <label>
+  if [ ! -f "$1" ]; then echo null
+  elif jq -e 'type == "object"' "$1" >/dev/null 2>&1; then jq -c . "$1"
+  else echo "factory-budget: warning: $1 is unreadable; ignoring it" >&2; echo null
+  fi
+}
+usage_json=$(read_json "$dir/usage.json")
+state_json=$(read_json "$dir/state.json")
+
+settings=$(factory_settings "$project")
+thresholds=$(jq -c '
+  def n($k; $d): if (.[$k] | type) == "number" then .[$k] else $d end;
+  {five_hour_pct: n("budget_five_hour_pct"; 80), seven_day_pct: n("budget_seven_day_pct"; 85), spec_ratio: n("budget_spec_ratio"; 1.5)}' <<<"$settings")
+now=$(jq -n --arg n "$(factory_now)" '$n | fromdateiso8601')
+
+decision=$(jq -nc --argjson usage "$usage_json" --argjson state "$state_json" --argjson now "$now" --argjson t "$thresholds" \
+  -f "$root/lib/budget.jq")
+
+if [ "$json" = 1 ]; then
+  jq . <<<"$decision"
+elif [ "$(jq '.messages | length' <<<"$decision")" = 0 ]; then
+  jq -r '"budget: ok" + (if .five_hour.pct == null then "" else " (5-hour \(.five_hour.pct)%" + (if .seven_day.pct == null then ")" else ", 7-day \(.seven_day.pct)%)" end) end)' <<<"$decision"
+else
+  jq -r '.messages[] | "budget: " + .' <<<"$decision"
+fi
+[ "$(jq '.messages | length' <<<"$decision")" = 0 ] || exit 3
