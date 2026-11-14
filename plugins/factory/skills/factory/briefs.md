@@ -24,7 +24,7 @@ Report in under 150 words: branch, worktree path (`pwd`), head commit, check res
 ## Merger
 
 ```
-Merge ticket #<ticket> into its spec's integration branch. Run exactly this, and wait for it: the push runs the project's pre-push hook, which can take minutes.
+Merge ticket #<ticket> into its spec's integration branch. Run exactly this, and wait for it: it may first queue behind another merge into the same integration branch, and the push runs the project's pre-push hook, which can take minutes. Do not add waits or locks of your own.
   ${CLAUDE_PLUGIN_ROOT}/bin/factory-integration merge --ticket <ticket> --branch <branch> --worktree <worktree> --title "<title>"
 Do nothing else: do not resolve conflicts, edit files, retry with other flags, skip hooks, or comment on issues. Report its exit code and its JSON output verbatim.
 ```

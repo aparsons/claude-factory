@@ -32,13 +32,13 @@ After each successful start, record it: `factory-state assign --ticket <n> --spe
 
 ## 5. When an implementer reports
 
-- Check passed: `factory-state gate --ticket <n> --result pass --tests-added <k>` and `factory-state update --ticket <n> --worktree <path it reported>`. Start a merger: Agent tool, `description` `merge #<ticket>`, `subagent_type` `general-purpose`, no isolation, `run_in_background` true, `model` and `effort` from the `merger` role in `roles.json`, `prompt` the merger brief.
+- Check passed: `factory-state gate --ticket <n> --result pass --tests-added <k>` and `factory-state update --ticket <n> --worktree <path it reported>`. Start a merger: Agent tool, `description` `merge #<ticket>`, `subagent_type` `general-purpose`, no isolation, `run_in_background` true, `model` and `effort` from the `merger` role in `roles.json`, `prompt` the merger brief. Start each merger as soon as its ticket passes, even while another merge into the same integration branch runs: `factory-integration merge` takes its turn on its own, in the order the mergers started. Never add a wait, a `pgrep` or a `sleep` loop, or a hand-made lock to a merge or its start.
 - Check failed, or no evidence it passed: `factory-state gate --ticket <n> --result fail`, and send it back once with SendMessage, naming what failed. A second failure: `factory-state unassign --ticket <n> --reason "gate failed twice"`, tell the user, keep its worktree. (Escalation comes with ticket #6.)
 - Stopped without a report, or the report says it could not finish: unassign with the reason and tell the user.
 
 ## 6. When a merger reports
 
-Read the JSON it relays from `factory-integration merge`:
+Read the JSON it relays from `factory-integration merge` (`waited_seconds` appears when it queued behind another merge; ignore it unless the wait looks long):
 
 - `merged`: one line, `#<n> merged into <branch>`. The tool already recorded the merge, removed the worktree and the ticket branch.
 - `conflict`: nothing was pushed and the ticket's worktree is kept. Ask the ticket's implementer (SendMessage) to merge `origin/<spec_branch>`, resolve, rerun the check and report again; then start a merger again. If it is gone, unassign the ticket with the reason and tell the user.

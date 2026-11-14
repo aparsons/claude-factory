@@ -16,6 +16,10 @@ Usage:
       In the ticket's spec integration worktree (from factory-state): fast-forward to origin,
       merge TICKET_BRANCH with --no-ff, push through the hooks, then remove the ticket's
       worktree PATH and delete TICKET_BRANCH, and record the merge with factory-state.
+      Merges into one integration branch take turns: this takes a lock for the branch under
+      .factory/locks/ (first come, first served; a lock whose holder no longer exists is taken
+      over, said on stderr) and releases it on every exit path. Merges into different branches
+      never wait for each other. A merge that waited adds waited_seconds to its result.
       Prints {result, ...}. Exit 0: merged. Exit 3: conflict (merge aborted, nothing pushed,
       worktree and branch kept; files listed). Exit 4: the integration branch has diverged from
       origin or the push failed (local merge undone; output included).
@@ -56,6 +60,61 @@ default_branch() {
     d=$( (cd "$project" && gh repo view --json defaultBranchRef --jq .defaultBranchRef.name) 2>/dev/null || true)
   fi
   printf '%s\n' "${d:-main}"
+}
+
+# --- the per-branch merge queue ---
+# .factory/locks/<branch>/ holds one file per merge that wants the branch, named q<sequence>.
+# A sequence number is taken with `ln`, which fails when the name exists, so numbers are unique
+# and follow the order merges started. The merge with the lowest live entry holds the lock; the
+# others wait their turn. An entry records the holder's PID, ticket and start time; an entry whose
+# PID no longer exists is stale and the first merge to see it removes it.
+lock_entry="" waited="" queued=""
+lock_release() {
+  if [ -n "$lock_entry" ]; then rm -f "$lock_entry"; lock_entry=""; fi
+}
+lock_acquire() { # lock_acquire <integration branch> <ticket>
+  local slug dir n tmpf lowest f pid t since began poll=${FACTORY_LOCK_POLL:-0.2}
+  slug=$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_')
+  dir="$project/.factory/locks/$slug"
+  mkdir -p "$dir"
+  factory_exclude "$project" /.factory/
+  tmpf=$(mktemp "$dir/tmp.XXXXXX")
+  printf 'pid=%s\nticket=%s\nstarted=%s\n' "$$" "$2" "$(factory_now)" >"$tmpf"
+  trap lock_release EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap 'exit 129' HUP
+  while :; do
+    n=$(find "$dir" -maxdepth 1 -type f -name 'q*' | sed 's|.*/q||' | sort | tail -n 1)
+    n=$(printf 'q%08d' $((10#${n:-0} + 1)))
+    if ln "$tmpf" "$dir/$n" 2>/dev/null; then lock_entry="$dir/$n"; break; fi
+  done
+  rm -f "$tmpf"
+  began=$(date +%s)
+  while :; do
+    lowest=""
+    for f in "$dir"/q*; do
+      [ -e "$f" ] || continue
+      pid=$(sed -n 's/^pid=//p' "$f" 2>/dev/null || true)
+      if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+        t=$(sed -n 's/^ticket=//p' "$f"); since=$(sed -n 's/^started=//p' "$f")
+        if rm "$f" 2>/dev/null; then
+          echo "factory-integration: taking over the stale lock on $1: its holder PID $pid (ticket #$t, started $since) no longer exists" >&2
+        fi
+        continue
+      fi
+      lowest=$f
+      break
+    done
+    [ "$lowest" = "$lock_entry" ] && break
+    queued=true
+    sleep "$poll"
+  done
+  if [ -n "$queued" ]; then waited=$(( $(date +%s) - began )); fi
+}
+# result: reads the result JSON on stdin; adds waited_seconds when this merge waited its turn.
+result() {
+  jq --argjson w "${waited:-null}" 'if $w == null then . else . + {waited_seconds: $w} end'
 }
 
 case "$cmd" in
@@ -101,13 +160,14 @@ merge)
   wt=$(jq -r --arg s "$spec" '.integration[$s].worktree // empty' <<<"$st")
   [ -n "$ib" ] && [ -d "$wt" ] || die "spec #$spec has no integration worktree; run factory-integration ensure first"
   [ "$ib" != "$(default_branch)" ] || die "refusing to merge into the default branch"
+  lock_acquire "$ib" "$ticket"
   w() { git -C "$wt" "$@"; }
   [ "$(w symbolic-ref -q --short HEAD)" = "$ib" ] || die "$wt is not on $ib"
   [ -z "$(w status --porcelain --untracked-files=no)" ] || die "$wt has uncommitted changes"
   g rev-parse -q --verify "refs/heads/$branch" >/dev/null || die "no local branch $branch"
   w fetch -q origin
   if ! w merge -q --ff-only "origin/$ib" >/dev/null 2>&1; then
-    jq -n --arg b "$ib" '{result: "diverged", detail: "the local \($b) has commits origin does not, and origin has commits it does not; nothing merged"}'
+    jq -n --arg b "$ib" '{result: "diverged", detail: "the local \($b) has commits origin does not, and origin has commits it does not; nothing merged"}' | result
     exit 4
   fi
   before=$(w rev-parse HEAD)
@@ -116,13 +176,13 @@ merge)
     files=$(w diff --name-only --diff-filter=U | jq -R -s -c 'split("\n") | map(select(length > 0))')
     w merge --abort >/dev/null 2>&1 || w reset -q --hard "$before"
     jq -n --arg tb "$branch" --arg ib "$ib" --argjson files "$files" \
-      '{result: "conflict", ticket_branch: $tb, integration_branch: $ib, files: $files}'
+      '{result: "conflict", ticket_branch: $tb, integration_branch: $ib, files: $files}' | result
     exit 3
   fi
   commit=$(w rev-parse HEAD)
   if ! out=$(w push origin "$ib" 2>&1); then
     w reset -q --hard "$before"
-    jq -n --arg ib "$ib" --arg out "$out" '{result: "push-failed", integration_branch: $ib, output: $out}'
+    jq -n --arg ib "$ib" --arg out "$out" '{result: "push-failed", integration_branch: $ib, output: $out}' | result
     exit 4
   fi
   removed=null
@@ -140,6 +200,6 @@ merge)
   jq -n --arg c "$commit" --arg tb "$branch" --arg ib "$ib" --arg wt "$worktree" \
     --argjson removed "$removed" --argjson deleted "$deleted" \
     '{result: "merged", commit: $c, ticket_branch: $tb, integration_branch: $ib,
-      worktree: (if $wt == "" then null else $wt end), worktree_removed: $removed, branch_deleted: $deleted}'
+      worktree: (if $wt == "" then null else $wt end), worktree_removed: $removed, branch_deleted: $deleted}' | result
   ;;
 esac
