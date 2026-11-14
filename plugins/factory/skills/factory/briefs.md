@@ -2,6 +2,8 @@
 
 Fill in the `<...>` values. Briefs carry pointers, not copied text: the agent reads the issues and docs itself.
 
+For a standalone ticket (`standalone: true`, no spec), the implementer brief opens with "Implement standalone ticket #<ticket> in this repository." and drops the spec from what to read; its `<spec_branch>` is the ticket's own `ticket/<n>-<slug>` branch.
+
 ## Implementer
 
 ```

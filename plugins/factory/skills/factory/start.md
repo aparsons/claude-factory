@@ -10,11 +10,12 @@ Run `factory-frontier --json`, then show the user its text form (`factory-fronti
 
 - `alerts` with `default-branch-red`: say so first, with the failing workflow and run URL. A fix lands on the default branch, which is an outward step: ask whether to investigate it with a read-only agent; continue with the frontier meanwhile.
 - `needs_tickets`: list them as "needs /to-tickets". Do not write tickets.
+- A ticket with `standalone: true` is an issue with no parent and no sub-issues (a bug or small task). It is a ticket like any other; its `spec` is its own number and its `spec_branch` is its own integration branch `ticket/<n>-<slug>`. Every step below applies to it unchanged, with that number as the spec.
 - If the user names a ticket or spec to go first, take it next, whatever its rank.
 
 ## 3. Integration branches
 
-For each spec with a ready ticket, run `factory-integration ensure --spec <spec> --branch <spec_branch>` (the ticket's `spec_branch`). It creates and pushes the branch from the default branch when absent, and keeps a dedicated worktree for merges; it never switches the user's checkout.
+For each spec with a ready ticket, and each ready standalone ticket, run `factory-integration ensure --spec <spec> --branch <spec_branch>` (the ticket's `spec` and `spec_branch`). It creates and pushes the branch from the default branch when absent, and keeps a dedicated worktree for merges; it never switches the user's checkout.
 
 ## 4. Start implementers
 
@@ -49,6 +50,6 @@ Read the JSON it relays from `factory-integration merge`:
 
 After every merge, recompute the frontier (`factory-frontier --json`) and go back to step 3 for newly ready tickets.
 
-When a spec's status is `complete`: run `factory-state integration --spec <s> --branch <branch> --status complete` and say "Spec #<s>: all tickets merged into <branch>." Start nothing more for it; review and its draft pull request come with ticket #9.
+When a spec's status is `complete`: run `factory-state integration --spec <s> --branch <branch> --status complete` and say "Spec #<s>: all tickets merged into <branch>." (for a `standalone` entry: "Ticket #<s>: merged into <branch>."). Start nothing more for it; review and its draft pull request come with ticket #9. A standalone ticket gets its own draft pull request from `ticket/<n>-<slug>` to the default branch, closing that one issue; merging it is an outward step.
 
 When nothing is ready and nothing is running, go idle: say in a few lines what waits on the user (specs needing `/to-tickets`, blocked specs and why, failures left for them) and stop working until they reply.
