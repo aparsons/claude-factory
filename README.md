@@ -33,6 +33,10 @@ A spec is an issue with sub-issues (its tickets), or a parent-less issue marked 
 
 A ticket's own blocking links decide when it is ready; a spec blocked by another spec holds a ticket only when the ticket has no link of its own to the blocking spec's work (the spec or one of its tickets), so linking a ticket to just the tickets it needs lets it start early without editing the tracker, and the frontier lists a ticket held only by its spec's link as `spec-blocked`, naming the spec.
 
+The KPIs are honest about rework. A ticket counts as first-try only if no failed gate was ever recorded for it: a failure recorded after a pass (a decision-review or CI send-back) supersedes the pass, and both stay in the ledger, which is never rewritten. The table lists rework per ticket (failed gates, review send-backs, escalations), so you can see which tickets were hard.
+
+The spawn gate counts the build output (untracked and git-ignored directories such as `target/`) of the main checkout and of every integration worktree, not only the ticket worktrees, when it decides whether there is room for another builder. Its block message lists each with its size and, when no process is running inside the main checkout's build directory, offers to clean it. The factory never deletes the main checkout's build output without your yes. A ticket whose check passed and whose agent has finished (`awaiting merge`) counts toward disk but not toward the builder cap.
+
 ## Guard rails
 
 `guard-bash` runs before every Bash call, in every session and subagent. It reads the command the way a shell splits it (quotes, `$(...)`, heredocs, comments, `;` `&&` `||` `|` `&`), so a look-alike such as `tail -n 100 build.log` or a commit message that mentions `--no-verify` passes.
@@ -77,12 +81,14 @@ Restarts and CI: the factory's state lives in the project's `.factory/`, so `/fa
 Before each release, the maintainer proves the whole loop on a throwaway repository. `scripts/sandbox.sh` makes it repeatable:
 
 ```
-scripts/sandbox.sh create                      # private repo factory-sandbox-<date>: one spec, three tickets with blocking edges
-cd <the clone it names>; claude                # plugin installed; run /factory start, answer its questions, do not approve the merge
-scripts/sandbox.sh verify --dir <the clone>    # checks what the run left behind
+scripts/sandbox.sh create                      # private repo factory-sandbox-<date>: two specs, six tickets, an ADR
+cd <the clone it names>; claude                # plugin installed; run /factory start, answer its questions, do not approve a merge
+scripts/sandbox.sh verify --dir <the clone> --spec 1 --early-spec 5   # checks what the run left behind (the numbers `create` printed)
 scripts/sandbox.sh destroy --repo <owner>/<name> --yes
 ```
 
-`create --dry-run` prints the plan and calls nothing. `verify` checks that tickets were taken in frontier order, worktrees were used and removed, every ticket was merged into the integration branch, the ledger and the spec report were written, one draft pull request closes the spec and its tickets, and nothing reached the default branch; that the manager asked before merging, you confirm in the session. `tests/sandbox/run.sh` tests the script against a fake `gh` and local remotes only (it runs in `scripts/check.sh`); the live run is not part of CI.
+The sandbox is built to exercise the second version of the loop. Spec #1 (a greeter) has three tickets in a chain; its first ticket tempts a one-line `echo` against ADR 0001 (scripts print with `printf`), so the decision review sends it back once. Spec #5 (a farewell) is blocked by spec #1 as a whole, but its tickets #6 and #7 are each linked only to ticket #2, so they start as soon as #2 merges, side by side, and their two merges into one integration branch must queue; ticket #8 has no link of its own, so the spec-level link holds it for the whole run (`spec-blocked` in the frontier). The seeded pre-push hook pauses `SANDBOX_PUSH_DELAY` seconds (default 45) so the two merges overlap. Claude Code holds a lock on every agent worktree at merge time, so each merge must clean up through it.
+
+`create --dry-run` prints the plan and calls nothing. `verify` checks that tickets were taken in frontier order, worktrees were used and removed, every ticket of spec #1 was merged into its integration branch, the ledger and the spec report were written, one draft pull request closes the spec and its tickets, and nothing reached the default branch; and the second loop: a ticket was sent back after its check passed and then passed again, with the first-try rate below 100% and the send-back counted as rework in `factory-kpis`; #6 and #7 were assigned after #2 merged and before spec #1 was done, and both merged into spec #5's integration branch, the second having waited for the first (`waited_s` on its `merge` event); #8 was never started; and no ticket worktree, ticket branch (here or on origin) or merge lock was left behind. What the script cannot see, you confirm in the session: that the manager asked before merging, wrote no wait (`sleep`, `pgrep` or a lock loop) of its own around a merge, and that the review's finding named ADR 0001 and quoted its line. `verify` fails when the send-back or the overlap did not happen; run the dry run again then (a larger `SANDBOX_PUSH_DELAY` makes the overlap likelier). `tests/sandbox/run.sh` tests the script against a fake `gh` and local remotes only (it runs in `scripts/check.sh`); the live run is not part of CI.
 
 Licensed under Apache 2.0.

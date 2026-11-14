@@ -23,6 +23,16 @@ Before you report:
 Report in under 150 words: branch, worktree path (`pwd`), head commit, check result with evidence (the last summary line; on failure what failed), number of tests added, and anything the next tickets must know.
 ```
 
+## Send-back
+
+What the manager sends (SendMessage) to a ticket's implementer when the decision review finds a conflict after a passing check (review.md). It is recorded as a gate failure, so the ticket counts as rework in the KPIs, not as first-try.
+
+```
+The decision review of ticket #<ticket> found these conflicts with a project decision or an acceptance criterion; each quotes the decision line or the criterion:
+<findings, verbatim>
+Fix exactly these, keeping the ticket's other behaviour. Rerun `<check_command>`, then report again in the same format as before.
+```
+
 ## Escalated implementer
 
 The implementer brief, with its worktree step replaced by this one and the paragraph after it added. `<what failed>`: the failing check output or the stall, in a few lines.
