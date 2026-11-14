@@ -12,9 +12,17 @@ Usage: factory-state <command> [options]
   show                         print the state JSON (an empty state when none is saved)
   list [--json]                running assignments with their age
   assign --ticket N --spec S --role R --model M --effort E --branch B [--worktree P] [--agent ID]
-                               record an assignment; ledger: assign {ticket, spec, role, model, effort, branch}
+                               record an assignment; ledger: assign {ticket, spec, role, model, effort, branch}.
+                               Exit 3 when the ticket already has one: an assigned ticket is never given
+                               to a second agent (a restarted session uses resume)
   update --ticket N [--agent ID] [--worktree P] [--branch B]
                                fill in what is known after the agent starts
+  resume --ticket N --action resume|restart
+                               a restarted session takes an assignment over (see factory-resume): keeps
+                               it (role, model, effort, branch, started, gate failures, escalation),
+                               clears its agent and worktree (the caller removes the old worktree and
+                               starts the new agent, then runs update), stamps resumed_at;
+                               ledger: resume {ticket, spec, action, role, model, effort}
   unassign --ticket N [--reason TEXT]
                                drop an assignment without merging; ledger: unassign {ticket, spec, reason}
   merge --ticket N --commit SHA
@@ -121,7 +129,7 @@ cmd=${1:-}
 case "$cmd" in -h | --help) usage; exit 0 ;; esac
 shift
 ticket="" spec="" role="" model="" effort="" branch="" worktree="" agent="" commit="" result=""
-tests_added="" reason="" status="" usd="" findings="" json=0
+tests_added="" reason="" status="" usd="" findings="" action="" json=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --ticket) ticket=${2:?}; shift ;;
@@ -139,6 +147,7 @@ while [ $# -gt 0 ]; do
     --status) status=${2:?}; shift ;;
     --usd) usd=${2:?}; shift ;;
     --findings) findings=${2:?}; shift ;;
+    --action) action=${2:?}; shift ;;
     --json) json=1 ;;
     on | off) [ "$cmd" = running ] || die "unexpected argument $1"; status=$1 ;;
     -h | --help) usage; exit 0 ;;
@@ -171,6 +180,9 @@ list)
 assign)
   need_num --ticket "$ticket"; need_num --spec "$spec"
   [ -n "$role" ] && [ -n "$model" ] && [ -n "$effort" ] && [ -n "$branch" ] || die "assign needs --role, --model, --effort and --branch"
+  if current | jq -e --arg t "$ticket" '.assignments | has($t)' >/dev/null; then
+    refuse "ticket #$ticket is already assigned (agent $(current | jq -r --arg t "$ticket" '.assignments[$t].agent // "none"')); an agent runs it, or factory-resume takes it over after a restart"
+  fi
   mutate '.assignments[$t] = {ticket: ($t | tonumber), spec: ($s | tonumber), role: $role, model: $model,
       effort: $effort, branch: $branch, worktree: (if $wt == "" then null else $wt end),
       agent: (if $agent == "" then null else $agent end), started: $now}' \
@@ -184,6 +196,15 @@ update)
   current | jq -e --arg t "$ticket" '.assignments | has($t)' >/dev/null || die "ticket #$ticket has no assignment"
   mutate '.assignments[$t] |= (. + ({agent: $agent, worktree: $wt, branch: $branch} | with_entries(select(.value != ""))))' \
     --arg t "$ticket" --arg agent "$agent" --arg wt "$worktree" --arg branch "$branch"
+  ;;
+resume)
+  need_num --ticket "$ticket"
+  case "$action" in resume | restart) ;; *) die "resume needs --action resume or restart" ;; esac
+  a=$(current | jq -c --arg t "$ticket" '.assignments[$t] // empty')
+  [ -n "$a" ] || die "ticket #$ticket has no assignment"
+  mutate '.assignments[$t] |= (. + {agent: null, worktree: null, resumed_at: $now})' --arg t "$ticket"
+  event '{event: "resume", ticket: $a.ticket, spec: $a.spec, action: $act, role: $a.role, model: $a.model, effort: $a.effort}' \
+    --argjson a "$a" --arg act "$action"
   ;;
 unassign)
   need_num --ticket "$ticket"

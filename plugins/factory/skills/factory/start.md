@@ -4,6 +4,19 @@
 
 Run `factory-prereqs`. If it exits non-zero, show its list and stop: the factory does not run half-configured. Otherwise keep its check command for the briefs, and run `factory-state running on`.
 
+## 1a. Resume a previous session
+
+The factory's state is in the project (`.factory/state.json`), so a new session takes up where the last one stopped. Run `factory-resume` (add `--live <agentId>` for each agent you started in this conversation; in a new session there are none). The agents of the previous session are gone, so every saved assignment is **taken over, never assigned again**: `factory-state assign` refuses a ticket that has one, and the frontier keeps assigned tickets out of its ready list. If it lists nothing, go on to step 2; otherwise show its plan once and, per assignment, by its `action`:
+
+- `live`: nothing. An agent of this session runs it.
+- `merged`: the merge is on the integration branch but was not recorded. `factory-state merge --ticket <n> --commit <commit>`; if it has a `worktree`, `git worktree remove --force <worktree>` and `git branch -d <branch>`. One line: `#<n> merged into <integration_branch> (recorded after a restart)`.
+- `resume` (its worktree exists): when `salvage` is true, commit what is uncommitted there: `git -C <worktree> add -A && git -C <worktree> commit -m "WIP: salvaged after restart"`. Then `git worktree remove --force <worktree>` (the factory created it; the branch and its commits stay), `factory-state resume --ticket <n> --action resume`, and start the builder as in step 5 without `assign`: `subagent_type` `factory:<role>`, `isolation` `worktree`, `run_in_background` true, `model` and `effort` as in the plan (an escalated ticket keeps its escalated tier, and the tools still allow one escalation only), `prompt` the "Resumed implementer" brief. Then `factory-state update --ticket <n> --agent <agentId>`.
+- `restart` (its worktree is gone): `factory-state resume --ticket <n> --action restart`, then start the builder the same way (the brief starts from the branch when it exists, else from the integration branch).
+
+The spawn gate applies to each start. If it blocks one, the assignment stays without an agent; the next `factory-resume` lists it as `restart`, so start it when the gate allows. One line per ticket (`#<n> resumed: <role> <model>/<effort>, <ahead> commit(s) kept`); the next digest lists escalations as usual.
+
+Also from the plan: `orphans` are worktrees under `.claude/worktrees` that nothing owns; list them and ask before removing any (you cannot know who made them). `integration` entries with `action` `ensure` get `factory-integration ensure --spec <spec> --branch <branch>`. A spec the frontier calls `complete` with no pull request from its integration branch yet (`gh pr list --head <branch> --state all`) goes to `${CLAUDE_PLUGIN_ROOT}/skills/factory/finish.md`.
+
 ## 2. Frontier
 
 Run `factory-frontier --json`, then show the user its text form (`factory-frontier`) once.
@@ -80,8 +93,18 @@ Read the JSON it relays from `factory-integration merge`:
 
 ## 8. Continue
 
-After every merge, recompute the frontier (`factory-frontier --json`) and go back to step 3 for newly ready tickets (the budgets of step 4 apply again).
+After every merge, recompute the frontier (`factory-frontier --json`) and go back to step 3 for newly ready tickets (the budgets of step 4 apply again). Check CI as step 9 says.
 
 When a spec's status is `complete`: run `factory-state integration --spec <s> --branch <branch> --status complete` and say "Spec #<s>: all tickets merged into <branch>." (for a `standalone` entry: "Ticket #<s>: merged into <branch>."). Start no more tickets for it; follow `${CLAUDE_PLUGIN_ROOT}/skills/factory/finish.md` (review, one fixer, spec report, draft pull request, then ask). A standalone ticket goes through the same steps: its draft pull request is from `ticket/<n>-<slug>` to the default branch and closes that one issue. Marking a pull request ready and merging it are outward steps.
 
 When nothing is ready and nothing is running, go idle: say in a few lines what waits on the user (specs needing `/to-tickets`, blocked specs and why, failures left for them) and stop working until they reply.
+
+## 9. CI
+
+After a merger pushes an integration branch, after a draft pull request is opened, and at each wake-up while a branch of the factory has CI pending, run `factory-ci check --branch <branch>`. It looks at the latest run of each workflow and decides; never run `gh run rerun` yourself.
+
+- A run with `rerun_started: true` failed for an infrastructure reason (the runner was lost, a network or service error, cancelled, did not start). The tool re-ran it, once; GitHub counts the attempts, so a restarted session does not re-run it again. One line: `CI re-run: <workflow> <url> (<reason>)`. Nothing to ask.
+- Exit 3: each run with `action` `report` is a failure to tell the user: a real failure (a step failed, or the run timed out: a hang is not infrastructure), or an infrastructure error again after its re-run. One line, `CI red: <workflow> <url>: <reason>`, then its `log_lines` verbatim. Offer one fixer builder (the "Fixer" brief, `log_lines` as the findings); start it only when the user agrees.
+- `pending` above 0: nothing to say yet; check again at the next wake-up (a completion, a heartbeat), never by polling. A `watcher` agent (`gh run watch`) may wait for one run, but its report is facts only: the decisions are the tool's.
+
+`factory-ci check --dry-run` decides without starting anything.

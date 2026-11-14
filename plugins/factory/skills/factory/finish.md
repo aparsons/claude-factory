@@ -34,7 +34,8 @@ When it reports a passing check, start a merger as for any ticket (brief "Merger
 2. Write the body with the `pr` skill (call the Skill tool with `pr`) for `<branch>` against the default branch. Its body must end with the lines from step 1: one `Closes #<n>` line for the spec and for each ticket. Save it to a file under `${TMPDIR:-/tmp}`.
 3. Run `factory-spec-report closes --spec <spec> --issue <issue.json> --body <body file>`. If it exits 1, add the lines it names to the body and run it again.
 4. Open the pull request as a **draft**: `gh pr create --draft --base <default branch> --head <branch> --title "<title>" --body-file <body file>`. Never without `--draft`.
-5. `factory-state integration --spec <spec> --branch <branch> --status complete` if not already recorded. Say: "Spec #<spec>: draft pull request <url>, report docs/factory/reports/<slug>.md."
+5. Check the pull request's CI as `start.md` step 9 says (`factory-ci check --branch <branch>`) before asking: an infrastructure failure is re-run once, a real one is reported with its log lines.
+6. `factory-state integration --spec <spec> --branch <branch> --status complete` if not already recorded. Say: "Spec #<spec>: draft pull request <url>, report docs/factory/reports/<slug>.md."
 
 ## 5. Ask
 

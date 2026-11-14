@@ -1,0 +1,1 @@
+{"jobs":[{"name":"check","conclusion":"failure","steps":[{"name":"Set up job","conclusion":"success"},{"name":"Run scripts/check.sh","conclusion":"cancelled"},{"name":"Post Run actions/checkout","conclusion":"skipped"}]}]}
